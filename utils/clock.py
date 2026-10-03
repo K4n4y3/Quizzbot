@@ -1,0 +1,20 @@
+from __future__ import annotations
+
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+
+ASTANA_TZ = ZoneInfo("Asia/Almaty")  # UTC+5, тот же часовой пояс, что и Астана
+
+
+def today_astana() -> date:
+    """
+    "Сегодня" по времени Астаны, а не сервера.
+
+    Сервер (Oracle, системные часы в UTC) и Астана (UTC+5) расходятся на
+    5 часов. Если бы где-то использовался голый date.today() (локальное
+    время сервера), то в окне 00:00-04:59 по Астане бот ещё думал бы, что
+    "сегодня" — вчерашний день (по UTC там ещё не наступила полночь), и
+    отдавал бы устаревшее расписание в /today, /week и во всех фильтрах
+    по дате.
+    """
+    return datetime.now(ASTANA_TZ).date()
