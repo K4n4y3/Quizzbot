@@ -41,13 +41,23 @@ async def run_all_parsers(
 
     all_events = [event for events in results for event in events]
     inserted = await repo.save_many(all_events)
+
+    # Снимок источника заменяем целиком, но только если парсер отработал
+    # без ошибок и что-то нашёл: пустой результат при успехе чаще означает
+    # поломку вёрстки, чем то, что игр действительно нет.
+    stale = 0
+    for parser, events in zip(parsers, results):
+        if parser.last_ok and events:
+            stale += await repo.delete_stale_for_source(parser.source_name, events)
+
     removed = await repo.delete_past()
 
     logger.info(
         "Парсинг завершён: всего найдено %d событий, новых сохранено %d, "
-        "прошедших удалено %d",
+        "устаревших у источников удалено %d, прошедших удалено %d",
         len(all_events),
         inserted,
+        stale,
         removed,
     )
 

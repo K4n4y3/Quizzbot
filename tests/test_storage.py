@@ -65,6 +65,23 @@ async def run() -> None:
     assert len(remaining) == 1, "После очистки должно остаться только будущее событие"
     assert remaining[0].title == "Кино #1"
 
+    # Игру переименовали на сайте: старая запись источника должна уйти,
+    # запись другого источника и ручная запись — остаться.
+    def make(source: str, title: str, manual: bool = False) -> QuizEvent:
+        return QuizEvent(
+            source=source, title=title, event_date=date(2026, 10, 6),
+            event_time=time(20, 0), venue="Garage", is_manual=manual,
+        )
+
+    old, renamed = make("Einstein Party", "#527 старое"), make("Einstein Party", "#527 новое")
+    other, manual = make("WOW Quiz", "чужая"), make("Einstein Party", "ручная", manual=True)
+    await repo.save_many([old, other, manual])
+    await repo.save_many([renamed])
+    stale = await repo.delete_stale_for_source("Einstein Party", [renamed])
+    assert stale == 1, f"Должна уйти только старая версия, ушло {stale}"
+    titles = {e.title for e in await repo.get_upcoming(from_date=date(2026, 10, 1))}
+    assert titles == {"#527 новое", "чужая", "ручная"}, titles
+
     print("Все тесты storage прошли успешно.")
 
 

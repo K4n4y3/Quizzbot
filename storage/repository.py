@@ -97,6 +97,24 @@ class EventRepository:
             await session.commit()
             return bool(result.rowcount)
 
+    async def delete_stale_for_source(self, source: str, fresh: list[QuizEvent]) -> int:
+        """
+        Удаляет спарсенные (не ручные) записи источника, которых нет в
+        свежем снимке его сайта. Без этого переименованная или перенесённая
+        игра копилась бы дублями: хэш включает название и площадку, так что
+        новая версия — это для БД другое событие, а старая остаётся.
+        """
+        hashes = [e.dedupe_hash for e in fresh]
+        stmt = delete(EventRow).where(
+            EventRow.source == source,
+            EventRow.is_manual.is_(False),
+            EventRow.dedupe_hash.not_in(hashes),
+        )
+        async with self._session_factory() as session:
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount or 0
+
     async def delete_past(self, *, before: date | None = None) -> int:
         """
         Удаляет события с датой раньше `before` (по умолчанию — сегодня).

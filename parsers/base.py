@@ -22,16 +22,23 @@ class BaseParser(ABC):
     #: и в логи. Обязательно к переопределению в наследнике.
     source_name: str = "unknown"
 
+    #: True, если последний fetch() отработал без исключения. Нужно, чтобы
+    #: отличить "сайт реально пуст" от "парсер упал" при чистке устаревших
+    #: записей источника (см. scheduler/jobs.py).
+    last_ok: bool = False
+
     async def fetch(self) -> list[QuizEvent]:
         """
         Публичная точка входа. Оборачивает `parse()` так, чтобы падение
         ОДНОГО источника не роняло весь цикл парсинга остальных источников.
         """
+        self.last_ok = False
         try:
             events = await self.parse()
         except Exception:
             logger.exception("Парсер %s упал с ошибкой", self.source_name)
             return []
+        self.last_ok = True
 
         logger.info("Парсер %s вернул %d событий", self.source_name, len(events))
         return events
