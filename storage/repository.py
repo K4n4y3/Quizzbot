@@ -97,17 +97,25 @@ class EventRepository:
             await session.commit()
             return bool(result.rowcount)
 
-    async def delete_stale_for_source(self, source: str, fresh: list[QuizEvent]) -> int:
+    async def delete_stale_for_source(
+        self, source: str, fresh: list[QuizEvent], *, today: date | None = None
+    ) -> int:
         """
         Удаляет спарсенные (не ручные) записи источника, которых нет в
         свежем снимке его сайта. Без этого переименованная или перенесённая
         игра копилась бы дублями: хэш включает название и площадку, так что
         новая версия — это для БД другое событие, а старая остаётся.
+
+        Сегодняшние игры не трогаем: часть сайтов (Play Quiz) убирает игру,
+        как только она началась, и вечером "Сегодня" теряло бы идущие игры.
+        Их уберёт delete_past() на следующий день.
         """
+        today = today or today_astana()
         hashes = [e.dedupe_hash for e in fresh]
         stmt = delete(EventRow).where(
             EventRow.source == source,
             EventRow.is_manual.is_(False),
+            EventRow.event_date > today,
             EventRow.dedupe_hash.not_in(hashes),
         )
         async with self._session_factory() as session:

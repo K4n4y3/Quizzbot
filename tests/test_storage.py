@@ -77,10 +77,16 @@ async def run() -> None:
     other, manual = make("WOW Quiz", "чужая"), make("Einstein Party", "ручная", manual=True)
     await repo.save_many([old, other, manual])
     await repo.save_many([renamed])
-    stale = await repo.delete_stale_for_source("Einstein Party", [renamed])
+    stale = await repo.delete_stale_for_source("Einstein Party", [renamed], today=date(2026, 10, 1))
     assert stale == 1, f"Должна уйти только старая версия, ушло {stale}"
     titles = {e.title for e in await repo.get_upcoming(from_date=date(2026, 10, 1))}
     assert titles == {"#527 новое", "чужая", "ручная"}, titles
+
+    # Сайт убрал уже начавшуюся сегодняшнюю игру — в боте она должна остаться.
+    started = make("Play Quiz", "MARVEL / DC")
+    await repo.save_many([started])
+    stale = await repo.delete_stale_for_source("Play Quiz", [make("Play Quiz", "другая")], today=date(2026, 10, 6))
+    assert stale == 0, "Сегодняшняя игра не должна удаляться очисткой по сайту"
 
     print("Все тесты storage прошли успешно.")
 
