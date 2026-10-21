@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from urllib.parse import urljoin
 
-from playwright.async_api import async_playwright
+from parsers.browser import goto, open_page, wait_for_items
 
 from models.event import QuizEvent
 from parsers.base import BaseParser
@@ -36,43 +36,38 @@ CARD_SELECTOR = ".schedule-card"
 
 class WowQuizParser(BaseParser):
     source_name = "WOW Quiz"
+    uses_browser = True
 
     async def parse(self) -> list[QuizEvent]:
         cards_data: list[dict] = []
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            try:
-                await page.goto(SCHEDULE_URL, wait_until="networkidle")
-                cards = page.locator(CARD_SELECTOR)
-                await cards.first.wait_for(state="attached", timeout=15_000)
+        async with open_page() as page:
+            await goto(page, SCHEDULE_URL)
+            cards = page.locator(CARD_SELECTOR)
+            count = await wait_for_items(cards, timeout=15_000)
 
-                count = await cards.count()
-                for i in range(count):
-                    card = cards.nth(i)
-                    href = card.locator('a[href^="/games/"]').first
-                    cards_data.append(
-                        {
-                            "title": await card.locator(".schedule-card__title").text_content(),
-                            "date": await card.locator(
-                                ".schedule-card__details-item.--date span"
-                            ).text_content(),
-                            "time": await card.locator(
-                                ".schedule-card__details-item.--time span"
-                            ).text_content(),
-                            "price": await card.locator(
-                                ".schedule-card__details-item.--price span"
-                            ).text_content(),
-                            "venue": await card.locator(".schedule-card__bar").text_content(),
-                            "address": await card.locator(
-                                ".schedule-card__bar-address"
-                            ).text_content(),
-                            "href": await href.get_attribute("href") if await href.count() else None,
-                        }
-                    )
-            finally:
-                await browser.close()
+            for i in range(count):
+                card = cards.nth(i)
+                href = card.locator('a[href^="/games/"]').first
+                cards_data.append(
+                    {
+                        "title": await card.locator(".schedule-card__title").text_content(),
+                        "date": await card.locator(
+                            ".schedule-card__details-item.--date span"
+                        ).text_content(),
+                        "time": await card.locator(
+                            ".schedule-card__details-item.--time span"
+                        ).text_content(),
+                        "price": await card.locator(
+                            ".schedule-card__details-item.--price span"
+                        ).text_content(),
+                        "venue": await card.locator(".schedule-card__bar").text_content(),
+                        "address": await card.locator(
+                            ".schedule-card__bar-address"
+                        ).text_content(),
+                        "href": await href.get_attribute("href") if await href.count() else None,
+                    }
+                )
 
         events: list[QuizEvent] = []
         for data in cards_data:

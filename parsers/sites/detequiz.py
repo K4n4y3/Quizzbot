@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from urllib.parse import urljoin
 
-from playwright.async_api import async_playwright
+from parsers.browser import goto, open_page, wait_for_items
 
 from models.event import QuizEvent
 from parsers.base import BaseParser
@@ -35,38 +35,31 @@ CARD_SELECTOR = "ul.grid.gap-4 > li"
 
 class DetequizParser(BaseParser):
     source_name = "Detequiz"
+    uses_browser = True
 
     async def parse(self) -> list[QuizEvent]:
         cards_data: list[dict] = []
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            # Без явной локали браузер получает англоязычную версию сайта
-            # (даты словом типа "Sun 27 Sept" вместо "вс, 27 сент.") —
-            # detequiz отдаёт контент по Accept-Language/locale, а не по URL.
-            context = await browser.new_context(locale="ru-RU")
-            page = await context.new_page()
-            try:
-                await page.goto(SCHEDULE_URL, wait_until="networkidle")
-                cards = page.locator(CARD_SELECTOR)
-                await cards.first.wait_for(state="attached", timeout=15_000)
+        # Без явной локали сайт отдаёт англоязычную версию (даты вида
+        # "Sun 27 Sept") — detequiz выбирает язык по Accept-Language, а не по URL.
+        async with open_page(locale="ru-RU") as page:
+            await goto(page, SCHEDULE_URL)
+            cards = page.locator(CARD_SELECTOR)
+            count = await wait_for_items(cards, timeout=15_000)
 
-                count = await cards.count()
-                for i in range(count):
-                    card = cards.nth(i)
-                    ps = card.locator("p")
-                    p_count = await ps.count()
-                    href = card.locator("a").first
-                    cards_data.append(
-                        {
-                            "title": await card.locator("h3").text_content(),
-                            "date": await ps.nth(0).text_content() if p_count > 0 else "",
-                            "venue": await ps.nth(1).text_content() if p_count > 1 else "",
-                            "href": await href.get_attribute("href") if await href.count() else None,
-                        }
-                    )
-            finally:
-                await browser.close()
+            for i in range(count):
+                card = cards.nth(i)
+                ps = card.locator("p")
+                p_count = await ps.count()
+                href = card.locator("a").first
+                cards_data.append(
+                    {
+                        "title": await card.locator("h3").text_content(),
+                        "date": await ps.nth(0).text_content() if p_count > 0 else "",
+                        "venue": await ps.nth(1).text_content() if p_count > 1 else "",
+                        "href": await href.get_attribute("href") if await href.count() else None,
+                    }
+                )
 
         events: list[QuizEvent] = []
         for data in cards_data:

@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 import re
 
-from playwright.async_api import async_playwright
+from parsers.browser import goto, open_page, wait_for_items
 
 from models.event import QuizEvent
 from parsers.base import BaseParser
@@ -44,29 +44,24 @@ _AFTER_DATE_RE = re.compile(r"^\s*\d{1,2}\s+\S+,\d{1,2}:\d{2}\s*-\s*(?P<rest>.+)
 
 class TeztapParser(BaseParser):
     source_name = "Teztap"
+    uses_browser = True
 
     async def parse(self) -> list[QuizEvent]:
         raw_values: list[str] = []
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            try:
-                await page.goto(PAGE_URL, wait_until="networkidle")
+        async with open_page() as page:
+            await goto(page, PAGE_URL)
 
-                popup = page.locator("div.t-popup", has_text=ASTANA_POPUP_TEXT)
-                checkboxes = popup.locator(DATE_CHECKBOX_SELECTOR)
-                # Элементы скрыты (display:none) до клика по попапу, поэтому
-                # ждём именно attached, а не дефолтный visible.
-                await checkboxes.first.wait_for(state="attached", timeout=15_000)
+            popup = page.locator("div.t-popup", has_text=ASTANA_POPUP_TEXT)
+            checkboxes = popup.locator(DATE_CHECKBOX_SELECTOR)
+            # Элементы скрыты (display:none) до клика по попапу, поэтому
+            # ждём именно attached, а не дефолтный visible.
+            count = await wait_for_items(checkboxes, timeout=15_000)
 
-                count = await checkboxes.count()
-                for i in range(count):
-                    value = await checkboxes.nth(i).get_attribute("value")
-                    if value:
-                        raw_values.append(value)
-            finally:
-                await browser.close()
+            for i in range(count):
+                value = await checkboxes.nth(i).get_attribute("value")
+                if value:
+                    raw_values.append(value)
 
         events: list[QuizEvent] = []
         for raw_text in raw_values:

@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 import re
 
-from playwright.async_api import async_playwright
+from parsers.browser import goto, open_page, wait_for_items
 
 from models.event import QuizEvent
 from parsers.base import BaseParser
@@ -43,38 +43,33 @@ _VENUE_RE = re.compile(r"^(?P<venue>.+?)\s*\((?P<address>[^)]+)\)\s*$")
 
 class MohitoQuizParser(BaseParser):
     source_name = "Mohito Quiz"
+    uses_browser = True
 
     async def parse(self) -> list[QuizEvent]:
         cards_data: list[dict] = []
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            try:
-                await page.goto(SCHEDULE_URL, wait_until="networkidle")
-                cards = page.locator(CARD_SELECTOR)
-                await cards.first.wait_for(state="attached", timeout=15_000)
+        async with open_page() as page:
+            await goto(page, SCHEDULE_URL)
+            cards = page.locator(CARD_SELECTOR)
+            count = await wait_for_items(cards, timeout=15_000)
 
-                count = await cards.count()
-                for i in range(count):
-                    card = cards.nth(i)
-                    raw_title = await card.locator(".js-store-prod-name").text_content()
-                    price = await card.locator(".t-store__card__price").text_content()
-                    venue_locator = card.locator(
-                        ".t-product__option-variants select, .t-product__option-item"
-                    ).first
-                    venue_text = None
-                    if await venue_locator.count():
-                        venue_text = await venue_locator.text_content()
-                    cards_data.append(
-                        {
-                            "raw_title": (raw_title or "").strip(),
-                            "price": (price or "").strip(),
-                            "venue_text": (venue_text or "").strip(),
-                        }
-                    )
-            finally:
-                await browser.close()
+            for i in range(count):
+                card = cards.nth(i)
+                raw_title = await card.locator(".js-store-prod-name").text_content()
+                price = await card.locator(".t-store__card__price").text_content()
+                venue_locator = card.locator(
+                    ".t-product__option-variants select, .t-product__option-item"
+                ).first
+                venue_text = None
+                if await venue_locator.count():
+                    venue_text = await venue_locator.text_content()
+                cards_data.append(
+                    {
+                        "raw_title": (raw_title or "").strip(),
+                        "price": (price or "").strip(),
+                        "venue_text": (venue_text or "").strip(),
+                    }
+                )
 
         events: list[QuizEvent] = []
         for data in cards_data:

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 
-from playwright.async_api import async_playwright
+from parsers.browser import goto, open_page, wait_for_items
 
 from models.event import QuizEvent
 from parsers.base import BaseParser
@@ -36,43 +36,38 @@ PANEL_SELECTOR = "div.p-6.bg-white"
 
 class MozgoQuizParser(BaseParser):
     source_name = "MozgoQuiz"
+    uses_browser = True
 
     async def parse(self) -> list[QuizEvent]:
         cards_data: list[dict] = []
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            try:
-                await page.goto(BASE_URL, wait_until="networkidle")
-                panels = page.locator(PANEL_SELECTOR)
-                await panels.first.wait_for(state="attached", timeout=15_000)
+        async with open_page() as page:
+            await goto(page, BASE_URL)
+            panels = page.locator(PANEL_SELECTOR)
+            count = await wait_for_items(panels, timeout=15_000)
 
-                count = await panels.count()
-                for i in range(count):
-                    panel = panels.nth(i)
-                    rows = panel.locator("div.flex.flex-col.gap-4 > div")
-                    if await rows.count() < 3:
-                        continue
+            for i in range(count):
+                panel = panels.nth(i)
+                rows = panel.locator("div.flex.flex-col.gap-4 > div")
+                if await rows.count() < 3:
+                    continue
 
-                    title = await panel.locator("p.font-semibold").first.text_content()
-                    raw_date = await rows.nth(0).locator("p").first.text_content()
-                    venue_ps = rows.nth(1).locator("p.venue")
-                    venue = await venue_ps.nth(0).text_content() if await venue_ps.count() > 0 else None
-                    address = await venue_ps.nth(1).text_content() if await venue_ps.count() > 1 else None
-                    price = await rows.nth(2).locator("p").first.text_content()
+                title = await panel.locator("p.font-semibold").first.text_content()
+                raw_date = await rows.nth(0).locator("p").first.text_content()
+                venue_ps = rows.nth(1).locator("p.venue")
+                venue = await venue_ps.nth(0).text_content() if await venue_ps.count() > 0 else None
+                address = await venue_ps.nth(1).text_content() if await venue_ps.count() > 1 else None
+                price = await rows.nth(2).locator("p").first.text_content()
 
-                    cards_data.append(
-                        {
-                            "title": (title or "").strip(),
-                            "raw_date": (raw_date or "").strip(),
-                            "venue": (venue or "").strip(),
-                            "address": (address or "").strip(),
-                            "price": (price or "").strip(),
-                        }
-                    )
-            finally:
-                await browser.close()
+                cards_data.append(
+                    {
+                        "title": (title or "").strip(),
+                        "raw_date": (raw_date or "").strip(),
+                        "venue": (venue or "").strip(),
+                        "address": (address or "").strip(),
+                        "price": (price or "").strip(),
+                    }
+                )
 
         events: list[QuizEvent] = []
         for data in cards_data:

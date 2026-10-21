@@ -29,7 +29,7 @@ from __future__ import annotations
 import logging
 from urllib.parse import urljoin
 
-from playwright.async_api import async_playwright
+from parsers.browser import goto, open_page, wait_for_items
 
 from models.event import QuizEvent
 from parsers.base import BaseParser
@@ -45,33 +45,28 @@ CARD_SELECTOR = ".schedule-card-desktop"
 
 class QuizPleaseParser(BaseParser):
     source_name = "Квиз, плиз!"
+    uses_browser = True
 
     async def parse(self) -> list[QuizEvent]:
         cards_data: list[dict] = []
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            try:
-                await page.goto(SCHEDULE_URL, wait_until="networkidle")
-                cards = page.locator(CARD_SELECTOR)
-                await cards.first.wait_for(state="attached", timeout=15_000)
+        async with open_page() as page:
+            await goto(page, SCHEDULE_URL)
+            cards = page.locator(CARD_SELECTOR)
+            count = await wait_for_items(cards, timeout=15_000)
 
-                count = await cards.count()
-                for i in range(count):
-                    card = cards.nth(i)
-                    cards_data.append(
-                        {
-                            "title": await card.locator(".game-title").text_content(),
-                            "raw_date": await card.locator(".game-date").text_content(),
-                            "venue": await card.locator(".place-title").text_content(),
-                            "address": await card.locator(".place-address").text_content(),
-                            "price": await card.locator(".price-sum").text_content(),
-                            "href": await card.locator(".game-title-link").get_attribute("href"),
-                        }
-                    )
-            finally:
-                await browser.close()
+            for i in range(count):
+                card = cards.nth(i)
+                cards_data.append(
+                    {
+                        "title": await card.locator(".game-title").text_content(),
+                        "raw_date": await card.locator(".game-date").text_content(),
+                        "venue": await card.locator(".place-title").text_content(),
+                        "address": await card.locator(".place-address").text_content(),
+                        "price": await card.locator(".price-sum").text_content(),
+                        "href": await card.locator(".game-title-link").get_attribute("href"),
+                    }
+                )
 
         events: list[QuizEvent] = []
         for data in cards_data:

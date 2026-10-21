@@ -2,42 +2,61 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta
 
 from parsers.base import BaseParser
+from parsers.browser import shared_browser
 from storage.repository import EventRepository
 
 logger = logging.getLogger(__name__)
 
 
+async def fetch_all(
+    parsers: list[BaseParser], max_concurrent: int = 1, *, with_timings: bool = False
+):
+    """
+    Собирает данные со всех источников. Браузерные парсеры работают во
+    вкладках одного общего Chromium и ограничены семафором — на сервере с
+    1 ГБ памяти больше одной страницы одновременно держать рискованно
+    (при 4 параллельных браузерах сервер зависал). Лёгкие httpx-парсеры
+    почти не тратят память и идут параллельно без ограничения.
+    Падение одного парсера не мешает остальным — см. BaseParser.fetch().
+    """
+    semaphore = asyncio.Semaphore(max_concurrent)
+    timings: dict[str, float] = {}
+
+    async def _run(parser: BaseParser) -> list:
+        if parser.uses_browser:
+            async with semaphore:
+                return await _timed(parser)
+        return await _timed(parser)
+
+    async def _timed(parser: BaseParser) -> list:
+        started = time.perf_counter()
+        events = await parser.fetch()
+        timings[parser.source_name] = time.perf_counter() - started
+        return events
+
+    async with shared_browser():
+        results = await asyncio.gather(*(_run(p) for p in parsers))
+    return (results, timings) if with_timings else results
+
+
 async def run_all_parsers(
     parsers: list[BaseParser],
     repo: EventRepository,
-    max_concurrent: int = 4,
+    max_concurrent: int = 1,
 ) -> None:
-    """
-    Запускает все парсеры ПАРАЛЛЕЛЬНО (это независимые сетевые запросы к
-    разным сайтам), затем одним пакетом сохраняет всё, что удалось собрать.
-    Падение одного парсера не мешает остальным — см. BaseParser.fetch().
+    """Обходит все источники и одним пакетом сохраняет собранное в БД."""
+    logger.info(
+        "Запускаю парсинг %d источников (браузерных — до %d одновременно)...",
+        len(parsers),
+        max_concurrent,
+    )
 
-    Параллелизм ограничен семафором: часть парсеров (JS-сайты) поднимают
-    настоящий headless-браузер через Playwright, и если запускать их все
-    разом без лимита, на слабой машине (типичный случай — ноутбук, а не
-    сервер) несколько браузеров одновременно начинают конкурировать за
-    CPU/RAM, и у части парсеров просто истекает таймаут навигации
-    (это не гипотетический риск — воспроизведено на практике при первом
-    прогоне 15 источников все разом: один из Playwright-парсеров словил
-    Timeout на networkidle, хотя по отдельности отрабатывает нормально).
-    """
-    logger.info("Запускаю парсинг %d источников (до %d одновременно)...", len(parsers), max_concurrent)
-
-    semaphore = asyncio.Semaphore(max_concurrent)
-
-    async def _fetch_bounded(parser: BaseParser) -> list:
-        async with semaphore:
-            return await parser.fetch()
-
-    results = await asyncio.gather(*(_fetch_bounded(p) for p in parsers))
+    started = time.perf_counter()
+    results = await fetch_all(parsers, max_concurrent)
 
     all_events = [event for events in results for event in events]
     inserted = await repo.save_many(all_events)
@@ -53,8 +72,9 @@ async def run_all_parsers(
     removed = await repo.delete_past()
 
     logger.info(
-        "Парсинг завершён: всего найдено %d событий, новых сохранено %d, "
+        "Парсинг завершён за %.0f с: всего найдено %d событий, новых сохранено %d, "
         "устаревших у источников удалено %d, прошедших удалено %d",
+        time.perf_counter() - started,
         len(all_events),
         inserted,
         stale,

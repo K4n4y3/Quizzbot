@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 from urllib.parse import urljoin
 
-from playwright.async_api import async_playwright
+from parsers.browser import goto, open_page, wait_for_items
 
 from models.event import QuizEvent
 from parsers.base import BaseParser
@@ -41,42 +41,34 @@ INFO_ROW_SELECTOR = ".space-y-2.text-sm.text-muted-foreground > div span"
 
 class ChillQuizParser(BaseParser):
     source_name = "Chill Quiz"
+    uses_browser = True
 
     async def parse(self) -> list[QuizEvent]:
         cards_data: list[dict] = []
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context()
-            await context.add_cookies(
-                [{"name": "city_slug", "value": "astana", "url": BASE_URL}]
-            )
-            page = await context.new_page()
-            try:
-                await page.goto(SCHEDULE_URL, wait_until="networkidle")
-                cards = page.locator(CARD_SELECTOR)
-                await cards.first.wait_for(state="attached", timeout=15_000)
+        city_cookie = {"name": "city_slug", "value": "astana", "url": BASE_URL}
+        async with open_page(cookies=[city_cookie]) as page:
+            await goto(page, SCHEDULE_URL)
+            cards = page.locator(CARD_SELECTOR)
+            count = await wait_for_items(cards, timeout=15_000)
 
-                count = await cards.count()
-                for i in range(count):
-                    card = cards.nth(i)
-                    info_spans = card.locator(INFO_ROW_SELECTOR)
-                    info_count = await info_spans.count()
-                    href = card.locator("xpath=..").first  # родительский <a>
-                    cards_data.append(
-                        {
-                            "title": await card.locator("h3").text_content(),
-                            "date": await info_spans.nth(0).text_content() if info_count > 0 else "",
-                            "time": await info_spans.nth(1).text_content() if info_count > 1 else "",
-                            "venue": await info_spans.nth(2).text_content() if info_count > 2 else "",
-                            "price": await card.locator(
-                                ".text-2xl.font-bold.text-primary"
-                            ).text_content(),
-                            "href": await href.get_attribute("href"),
-                        }
-                    )
-            finally:
-                await browser.close()
+            for i in range(count):
+                card = cards.nth(i)
+                info_spans = card.locator(INFO_ROW_SELECTOR)
+                info_count = await info_spans.count()
+                href = card.locator("xpath=..").first  # родительский <a>
+                cards_data.append(
+                    {
+                        "title": await card.locator("h3").text_content(),
+                        "date": await info_spans.nth(0).text_content() if info_count > 0 else "",
+                        "time": await info_spans.nth(1).text_content() if info_count > 1 else "",
+                        "venue": await info_spans.nth(2).text_content() if info_count > 2 else "",
+                        "price": await card.locator(
+                            ".text-2xl.font-bold.text-primary"
+                        ).text_content(),
+                        "href": await href.get_attribute("href"),
+                    }
+                )
 
         events: list[QuizEvent] = []
         for data in cards_data:

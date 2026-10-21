@@ -27,6 +27,10 @@ class BaseParser(ABC):
     #: записей источника (см. scheduler/jobs.py).
     last_ok: bool = False
 
+    #: Парсер открывает страницу в общем Chromium (parsers/browser.py).
+    #: Такие парсеры ограничены по параллельности, httpx-парсеры — нет.
+    uses_browser: bool = False
+
     async def fetch(self) -> list[QuizEvent]:
         """
         Публичная точка входа. Оборачивает `parse()` так, чтобы падение

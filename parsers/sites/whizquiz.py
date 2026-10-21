@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 import re
 
-from playwright.async_api import async_playwright
+from parsers.browser import goto, open_page, wait_for_items
 
 from models.event import QuizEvent
 from parsers.base import BaseParser
@@ -46,34 +46,29 @@ _DATE_PREFIX_RE = re.compile(r"^\s*(?P<date_part>\d{1,2}\s+\S+\s*\([^)]*\))\s*(?
 
 class WhizQuizParser(BaseParser):
     source_name = "Whiz Quiz"
+    uses_browser = True
 
     async def parse(self) -> list[QuizEvent]:
         raw_values: list[str] = []
         price: str | None = None
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            try:
-                await page.goto(BASE_URL, wait_until="networkidle")
-                await page.click(CITY_BUTTON_SELECTOR)
+        async with open_page() as page:
+            await goto(page, BASE_URL)
+            await page.click(CITY_BUTTON_SELECTOR)
 
-                games = page.locator(GAME_RADIO_SELECTOR)
-                await games.first.wait_for(state="attached", timeout=15_000)
+            games = page.locator(GAME_RADIO_SELECTOR)
+            count = await wait_for_items(games, timeout=15_000)
 
-                count = await games.count()
-                for i in range(count):
-                    value = await games.nth(i).get_attribute("value")
-                    if value:
-                        raw_values.append(value)
+            for i in range(count):
+                value = await games.nth(i).get_attribute("value")
+                if value:
+                    raw_values.append(value)
 
-                price_radios = page.locator(PRICE_RADIO_SELECTOR)
-                if await price_radios.count():
-                    raw_price = await price_radios.first.get_attribute("value")
-                    match = _PRICE_RE.search(raw_price or "")
-                    price = match.group(1).strip() if match else raw_price
-            finally:
-                await browser.close()
+            price_radios = page.locator(PRICE_RADIO_SELECTOR)
+            if await price_radios.count():
+                raw_price = await price_radios.first.get_attribute("value")
+                match = _PRICE_RE.search(raw_price or "")
+                price = match.group(1).strip() if match else raw_price
 
         events: list[QuizEvent] = []
         for raw_text in raw_values:
