@@ -13,7 +13,6 @@ from bot.handlers.schedule import register_schedule_handlers
 from bot.handlers.schedule import router as schedule_router
 from config import Config
 from parsers.base import BaseParser
-from parsers.sites.action import ActionKinoquizParser
 from parsers.sites.chill import ChillQuizParser
 from parsers.sites.detequiz import DetequizParser
 from parsers.sites.einstein import EinsteinPartyParser
@@ -25,8 +24,6 @@ from parsers.sites.quizland import QuizlandParser
 from parsers.sites.quizplease import QuizPleaseParser
 from parsers.sites.shaker import ShakerQuizParser
 from parsers.sites.smuzi import SmuziQuizParser
-from parsers.sites.teztap import TeztapParser
-from parsers.sites.whizquiz import WhizQuizParser
 from parsers.sites.wow import WowQuizParser
 from scheduler.jobs import ParseCoordinator
 from storage.db import init_db, make_engine, make_session_factory
@@ -38,11 +35,11 @@ logger = logging.getLogger(__name__)
 
 def build_parsers() -> list[BaseParser]:
     """
-    Список активных парсеров. По мере готовности новых парсеров сайтов
-    (parsers/sites/*.py) — добавлять их сюда.
+    Список активных парсеров. Action, Teztap и Whiz Quiz сознательно не
+    парсятся: их игры админ добавляет вручную (на сайтах нет времени/места
+    или данных слишком мало).
     """
     return [
-        TeztapParser(),
         QuizPleaseParser(),
         EinsteinPartyParser(),
         ShakerQuizParser(),
@@ -50,13 +47,11 @@ def build_parsers() -> list[BaseParser]:
         WowQuizParser(),
         PeaceQuizParser(),
         QuizlandParser(),
-        ActionKinoquizParser(),
         MozgoQuizParser(),
         PlayQuizParser(),
         ChillQuizParser(),
         DetequizParser(),
         MohitoQuizParser(),
-        WhizQuizParser(),
     ]
 
 

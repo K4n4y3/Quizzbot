@@ -28,14 +28,14 @@ Telegram-бот, который собирает расписание квиз-�
   падают по таймауту (воспроизведено на практике при прогоне всех 15
   источников разом).
 
-**Парсеры сайтов — готовы 15 из 15 источников вашего списка** (все, кроме
-Instagram-страниц — их сознательно пропустили). Все проверены вживую
+**Парсеры сайтов — 12 источников.** Action, Teztap и Whiz Quiz отключены:
+их игры добавляются вручную (см. «Ручное добавление»). Instagram-страницы
+сознательно не парсятся. Все проверены вживую
 2026-09-23, актуальные числа "сколько событий нашёл" — с того прогона,
 дальше будет меняться вместе с реальным расписанием сайтов:
 
 | Файл | Источник | Метод | Событий |
 |---|---|---|---|
-| `teztap.py` | TezTap | Playwright (Tilda, попап) | 3 |
 | `quizplease.py` | Квиз, плиз! | Playwright (`/schedule`, Nuxt CSR) | 10 |
 | `einstein.py` | Einstein Party | httpx (статика, data-атрибуты) | 21 |
 | `shaker.py` | Shaker Quiz | httpx (Next.js `__NEXT_DATA__` JSON) | 4 |
@@ -43,13 +43,11 @@ Instagram-страниц — их сознательно пропустили). 
 | `wow.py` | WOW Quiz | Playwright (Nuxt CSR, `/schedule`) | 16 |
 | `peace.py` | Peace Quiz | Playwright (Tilda Catalog, с задержкой) | 7 |
 | `quizland.py` | Quizland | httpx (только 1 анонс на сайте) | 1 |
-| `action.py` | Action Киноквиз | httpx (линк-в-био Tapter) | 1 |
 | `mozgo.py` | MozgoQuiz | Playwright (Vue) | 2 |
 | `playquiz.py` | Play Quiz | httpx (Next.js SSR) | 3 |
 | `chill.py` | Chill Quiz | Playwright + cookie `city_slug=astana` | 6 |
 | `detequiz.py` | Detequiz | Playwright (блокирует curl, нужен `locale=ru-RU`) | 3 |
 | `mohito.py` | Mohito Quiz | Playwright (тот же движок, что Smuzi) | 36 |
-| `whizquiz.py` | Whiz Quiz | Playwright (клик по городу перед чтением формы) | 9 |
 
 Несколько важных находок по дороге, актуальных для любого нового парсера:
 
@@ -143,7 +141,7 @@ quiz, Blackbox, Svoy, Beast case, Quizmania, Мозгобаттл) — авто�
 
 Если появится новый сайт-источник — `_static_template.py` (статика,
 образец — `playquiz.py`/`einstein.py`) или скопировать любой из
-Playwright-парсеров (`teztap.py`, `chill.py` — хорошие примеры) под
+Playwright-парсеров (`chill.py`, `wow.py` — хорошие примеры) под
 JS-сайты, дальше добавить в `build_parsers()` в `bot/main.py`.
 
 ## Запуск
