@@ -18,6 +18,7 @@ class DisplayEvent:
     event_date: date
     event_time: time | None
     venue: str
+    address: str | None = None
 
 
 def _venue_key(venue: str) -> str:
@@ -35,7 +36,7 @@ def merge_mirrors(events: list[EventRow]) -> list[DisplayEvent]:
     mirror_index: dict[tuple, int] = {}
 
     for e in events:
-        display = DisplayEvent(e.source, e.title, e.event_date, e.event_time, e.venue)
+        display = DisplayEvent(e.source, e.title, e.event_date, e.event_time, e.venue, e.address)
         if e.source not in _MIRROR_SOURCES:
             result.append(display)
             continue

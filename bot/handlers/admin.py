@@ -52,7 +52,7 @@ _MONTHS_GENITIVE = [
 ]
 
 _MAX_OPTIONS_PER_POLL = 9  # у Telegram лимит 10 вариантов, один занят пунктом "без меня"
-_OPT_OUT = "сегодня давайте без меня 😎"
+_OPT_OUT = "сегодня без меня ❌"
 _MAX_OPTION_LEN = 100
 _MAX_QUESTION_LEN = 300
 
@@ -85,15 +85,27 @@ class BulkAddStates(StatesGroup):
 
 
 def _poll_question(d: date, part: int, total_parts: int) -> str:
-    header = f"{d.day} {_MONTHS_GENITIVE[d.month - 1]}, {_WEEKDAYS[d.weekday()]} - сегодня я иду…"
+    header = f"🗓 {d.day} {_MONTHS_GENITIVE[d.month - 1]}, {_WEEKDAYS[d.weekday()]} - сегодня я иду..."
     if total_parts > 1:
         header += f" ({part}/{total_parts})"
     return header[:_MAX_QUESTION_LEN]
 
 
 def _poll_option(e: DisplayEvent) -> str:
+    """
+    "Организатор время (бар, адрес) — Тема игры". В вариантах опроса
+    Telegram не поддерживает жирный шрифт — только обычный текст. Если не
+    влезает в лимит 100 символов, сначала жертвуем адресом, потом
+    обрезаем тему.
+    """
     time_str = e.event_time.strftime("%H:%M") if e.event_time else "время уточняется"
-    text = f"{e.source} {time_str} - {e.title} ({e.venue})"
+    venue = "место уточняется" if e.venue == "уточняется" else e.venue
+    place = venue
+    if e.address and e.address.lower() not in venue.lower():
+        place = f"{venue}, {e.address}"
+    text = f"{e.source} {time_str} ({place}) — {e.title}"
+    if len(text) > _MAX_OPTION_LEN:
+        text = f"{e.source} {time_str} ({venue}) — {e.title}"
     if len(text) > _MAX_OPTION_LEN:
         text = text[: _MAX_OPTION_LEN - 1] + "…"
     return text
