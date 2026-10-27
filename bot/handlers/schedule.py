@@ -29,16 +29,17 @@ _MAX_MESSAGE_LEN = 4000  # у Telegram лимит 4096, оставляем за�
 
 
 def _format_day_header(d: date) -> str:
-    return f"* {d.day} {_MONTHS_GENITIVE[d.month - 1]} ({_WEEKDAYS[d.weekday()]})"
+    return f"🗓 <b>{d.day} {_MONTHS_GENITIVE[d.month - 1]}, {_WEEKDAYS[d.weekday()].upper()}</b>"
 
 
 def _format_event(e: DisplayEvent) -> str:
+    """<b>Организатор время</b> — Тема | <i>бар, адрес</i>"""
     time_str = e.event_time.strftime("%H:%M") if e.event_time else "время уточняется"
-    title = escape(e.title)
-    venue = escape(e.venue)
-    source = escape(e.source)
-
-    return f"{source} {time_str} — {title} | {venue}"
+    venue = "место уточняется" if e.venue == "уточняется" else e.venue
+    place = venue
+    if e.address and e.address.lower() not in venue.lower():
+        place = f"{venue}, {e.address}"
+    return f"<b>{escape(e.source)} {time_str}</b> — {escape(e.title)} | <i>{escape(place)}</i>"
 
 
 def _format_events_by_day(events: list[DisplayEvent]) -> str:
