@@ -164,7 +164,7 @@ def register_schedule_handlers(
         events = merge_mirrors(
             await repo.get_upcoming(from_date=today, to_date=today + timedelta(days=_THEME_DAYS))
         )
-        events = [e for e in events if theme in themes_of(e.title)]
+        events = [e for e in events if theme in themes_of(e.title, e.source)]
         if not events:
             await message.answer(f"По теме «{theme}» на ближайшие {_THEME_DAYS} дней квизов не нашлось.")
             return

@@ -34,11 +34,21 @@ THEMES: dict[str, re.Pattern[str]] = {
     "Хэллоуин": re.compile(r"хэллоуин|ужас"),
 }
 
+# Организаторы, у которых любая игра — детектив/расследование, даже если
+# в названии этого слова нет. Пробелы и регистр не важны: источники этих
+# организаторов добавляют вручную, и написание может отличаться.
+_SOURCE_THEMES: dict[str, set[str]] = {
+    "alibi": {"Детектив"},
+    "sainttwins": {"Детектив"},
+    "detequiz": {"Детектив"},
+}
+
 OTHER = "Прочее"
 ALL_THEMES: list[str] = [*THEMES, OTHER]
 
 
-def themes_of(title: str) -> set[str]:
+def themes_of(title: str, source: str = "") -> set[str]:
     text = title.lower().replace("ё", "е")
     found = {name for name, pattern in THEMES.items() if pattern.search(text)}
+    found |= _SOURCE_THEMES.get("".join(source.lower().split()), set())
     return found or {OTHER}
