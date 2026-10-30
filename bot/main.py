@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
 
 from bot.handlers.admin import register_admin_handlers
 from bot.handlers.admin import router as admin_router
@@ -55,21 +58,59 @@ def build_parsers() -> list[BaseParser]:
     ]
 
 
+WEBHOOK_PATH = "/webhook"
+
+
+def _webhook_secret(config: Config) -> str:
+    # Telegram присылает его в заголовке каждого запроса — так чужие запросы
+    # на /webhook отбрасываются. Если не задан явно, выводим из токена бота:
+    # он и так секретный, а настраивать на одну переменную меньше.
+    return config.webhook_secret or hashlib.sha256(config.bot_token.encode()).hexdigest()[:32]
+
+
+async def _run_webhook(bot: Bot, dp: Dispatcher, config: Config) -> None:
+    """Режим хостинга: Telegram сам присылает сообщения на наш адрес."""
+    secret = _webhook_secret(config)
+    url = f"{config.webhook_base_url.rstrip('/')}{WEBHOOK_PATH}"
+
+    @dp.startup()
+    async def _set_webhook(bot: Bot) -> None:
+        await bot.set_webhook(url, secret_token=secret, allowed_updates=dp.resolve_used_update_types())
+        logger.info("Вебхук установлен: %s", url)
+
+    async def health(_: web.Request) -> web.Response:
+        return web.Response(text="ok")
+
+    app = web.Application()
+    app.router.add_get("/", health)
+    SimpleRequestHandler(dispatcher=dp, bot=bot, secret_token=secret).register(app, path=WEBHOOK_PATH)
+    setup_application(app, dp, bot=bot)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    await web.TCPSite(runner, "0.0.0.0", config.port).start()
+    logger.info("Бот запущен в режиме вебхука на порту %d", config.port)
+    await asyncio.Event().wait()
+
+
 async def main() -> None:
     config = Config.from_env()
 
-    engine = make_engine(config.db_path)
+    engine = make_engine(config.database)
     await init_db(engine)
     session_factory = make_session_factory(engine)
     repo = EventRepository(session_factory)
 
-    parsers = build_parsers()
-    coordinator = ParseCoordinator(
-        parsers,
-        repo,
-        max_concurrent=config.max_concurrent_parsers,
-        stale_after_minutes=config.parse_interval_minutes,
-    )
+    # На ноутбуке бот парсит сайты сам, по нажатию кнопки (см. ParseCoordinator).
+    # На хостинге браузера нет — расписание в базе обновляет GitHub Actions.
+    coordinator = None
+    if config.parse_on_demand:
+        coordinator = ParseCoordinator(
+            build_parsers(),
+            repo,
+            max_concurrent=config.max_concurrent_parsers,
+            stale_after_minutes=config.parse_interval_minutes,
+        )
 
     bot = Bot(token=config.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
@@ -78,9 +119,17 @@ async def main() -> None:
     register_schedule_handlers(schedule_router, repo, coordinator, config)
     register_admin_handlers(admin_router, repo, config, coordinator)
 
-    # Никакого фонового расписания: парсинг сайтов запускается лениво,
-    # изнутри хендлеров /today, /week, /post_today — только когда кто-то
-    # реально обращается к боту. См. ParseCoordinator.
+    if config.webhook_base_url:
+        await _run_webhook(bot, dp, config)
+        return
+
+    # Поллинг и вебхук для одного бота несовместимы: снимаем вебхук. Если бот
+    # в это время развёрнут на хостинге, он перестанет получать сообщения до
+    # своего перезапуска — локально запускать стоит только с другим токеном
+    # или когда хостинг не используется.
+    if (await bot.get_webhook_info()).url:
+        logger.warning("У бота был вебхук (хостинг) — снимаю его для локального поллинга")
+        await bot.delete_webhook()
     logger.info("Бот запущен, поллинг...")
     await dp.start_polling(bot)
 

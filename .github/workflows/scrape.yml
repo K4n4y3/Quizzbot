@@ -1,0 +1,50 @@
+name: Обновление расписания
+
+on:
+  schedule:
+    # Каждые 3 часа (время UTC; в Астане +5). Минуты не ровные — в начале
+    # часа у GitHub очередь, и запуск может сильно опоздать.
+    - cron: "17 */3 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: scrape
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Установка зависимостей
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Обход сайтов
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m scheduler.scrape
+
+      # GitHub отключает расписание в публичном репозитории, если в нём 60
+      # дней не было коммитов. Раз в ~50 дней тишины делаем пустой коммит.
+      - name: Не дать GitHub отключить расписание
+        if: github.event_name == 'schedule'
+        run: |
+          last=$(git log -1 --format=%ct)
+          if [ $(( $(date +%s) - last )) -gt $(( 50 * 24 * 3600 )) ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "Keepalive: scheduled scraping"
+            git push
+          fi

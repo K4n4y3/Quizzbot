@@ -1,0 +1,25 @@
+# Render Blueprint: бот в режиме вебхука на бесплатном тарифе.
+# Парсинга здесь нет — расписание в базе обновляет GitHub Actions.
+services:
+  - type: web
+    name: quizbot
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m bot.main
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: DEFAULT_CITY
+        value: Астана
+      # Секреты Render спросит при создании сервиса — в репозитории их нет.
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_USER_ID
+        sync: false
+      - key: CHANNEL_ID
+        sync: false

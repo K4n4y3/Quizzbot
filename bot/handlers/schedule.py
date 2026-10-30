@@ -66,7 +66,7 @@ async def _answer_chunked(message: Message, text: str) -> None:
         await message.answer(chunk)
 
 
-async def _ensure_fresh_with_notice(message: Message, coordinator: ParseCoordinator) -> None:
+async def _ensure_fresh_with_notice(message: Message, coordinator: ParseCoordinator | None) -> None:
     """
     Парсинг запускается лениво, по факту обращения к боту (см.
     ParseCoordinator), а не по таймеру — так что первый после "затишья"
@@ -74,7 +74,7 @@ async def _ensure_fresh_with_notice(message: Message, coordinator: ParseCoordina
     часть — через headless-браузер). Предупреждаем об этом, только если
     парсинг реально запустится (данные устарели), а не при каждом вызове.
     """
-    if not coordinator.is_stale():
+    if coordinator is None or not coordinator.is_stale():
         return
     notice = await message.answer("⏳ Собираю свежее расписание с сайтов, секунду...")
     await coordinator.ensure_fresh()
@@ -85,7 +85,7 @@ async def _ensure_fresh_with_notice(message: Message, coordinator: ParseCoordina
 
 
 def register_schedule_handlers(
-    router_: Router, repo: EventRepository, coordinator: ParseCoordinator, config: Config
+    router_: Router, repo: EventRepository, coordinator: ParseCoordinator | None, config: Config
 ) -> None:
     """
     Регистрирует хендлеры, которым нужен доступ к repo/coordinator/config.

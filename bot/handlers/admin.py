@@ -116,7 +116,7 @@ def _chunk(items: list, size: int) -> list[list]:
 
 
 def register_admin_handlers(
-    router_: Router, repo: EventRepository, config: Config, coordinator: ParseCoordinator
+    router_: Router, repo: EventRepository, config: Config, coordinator: ParseCoordinator | None
 ) -> None:
     """Регистрирует хендлеры, которым нужен доступ к repo/config/coordinator."""
 
@@ -137,7 +137,7 @@ def register_admin_handlers(
             await message.answer("Команда не настроена: задайте CHANNEL_ID в .env.")
             return
 
-        if coordinator.is_stale():
+        if coordinator is not None and coordinator.is_stale():
             notice = await message.answer("⏳ Собираю свежее расписание с сайтов, секунду...")
             await coordinator.ensure_fresh()
             try:

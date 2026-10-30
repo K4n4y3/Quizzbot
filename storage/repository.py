@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -20,7 +21,7 @@ class EventRepository:
         Сохраняет события, игнорируя дубликаты (по dedupe_hash).
         Возвращает количество РЕАЛЬНО новых записей.
 
-        INSERT OR IGNORE на уровне БД, а не "сначала SELECT потом решай" —
+        INSERT ... ON CONFLICT DO NOTHING на уровне БД, а не "сначала SELECT потом решай" —
         так это остаётся корректным, даже если несколько источников
         парсятся параллельно и одновременно пишут.
         """
@@ -46,7 +47,8 @@ class EventRepository:
         ]
 
         async with self._session_factory() as session:
-            stmt = sqlite_insert(EventRow).values(rows)
+            insert = pg_insert if session.bind.dialect.name == "postgresql" else sqlite_insert
+            stmt = insert(EventRow).values(rows)
             stmt = stmt.on_conflict_do_nothing(index_elements=["dedupe_hash"])
             result = await session.execute(stmt)
             await session.commit()
@@ -58,7 +60,7 @@ class EventRepository:
         from_date: date | None = None,
         to_date: date | None = None,
         city: str | None = None,
-        limit: int = 100,
+        limit: int = 1000,
     ) -> list[EventRow]:
         from_date = from_date or today_astana()
 
