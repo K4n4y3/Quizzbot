@@ -35,6 +35,14 @@ class EventRow(Base):
     is_manual: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
+class PollLog(Base):
+    """Дни, за которые ежедневный опрос уже опубликован — защита от дублей."""
+
+    __tablename__ = "poll_log"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+
+
 def _postgres_url(url: str) -> tuple[str, dict]:
     """
     Строка подключения Neon/Supabase ("postgresql://...?sslmode=require")

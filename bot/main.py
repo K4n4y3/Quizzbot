@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import logging
 
 from aiogram import Bot, Dispatcher
@@ -10,6 +11,7 @@ from aiogram.enums import ParseMode
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
+from bot.daily_poll import post_daily_poll
 from bot.handlers.admin import register_admin_handlers
 from bot.handlers.admin import router as admin_router
 from bot.handlers.schedule import register_schedule_handlers
@@ -68,7 +70,7 @@ def _webhook_secret(config: Config) -> str:
     return config.webhook_secret or hashlib.sha256(config.bot_token.encode()).hexdigest()[:32]
 
 
-async def _run_webhook(bot: Bot, dp: Dispatcher, config: Config) -> None:
+async def _run_webhook(bot: Bot, dp: Dispatcher, config: Config, repo: EventRepository) -> None:
     """Режим хостинга: Telegram сам присылает сообщения на наш адрес."""
     secret = _webhook_secret(config)
     url = f"{config.webhook_base_url.rstrip('/')}{WEBHOOK_PATH}"
@@ -81,8 +83,17 @@ async def _run_webhook(bot: Bot, dp: Dispatcher, config: Config) -> None:
     async def health(_: web.Request) -> web.Response:
         return web.Response(text="ok")
 
+    async def daily_poll(request: web.Request) -> web.Response:
+        key = request.headers.get("X-Cron-Key") or request.query.get("key")
+        if not config.cron_secret or not hmac.compare_digest(key or "", config.cron_secret):
+            return web.Response(status=404)
+        if not config.channel_id:
+            return web.Response(status=500, text="CHANNEL_ID не задан")
+        return web.Response(text=await post_daily_poll(bot, repo, config.channel_id))
+
     app = web.Application()
     app.router.add_get("/", health)
+    app.router.add_route("*", "/cron/daily-poll", daily_poll)
     SimpleRequestHandler(dispatcher=dp, bot=bot, secret_token=secret).register(app, path=WEBHOOK_PATH)
     setup_application(app, dp, bot=bot)
 
@@ -120,7 +131,7 @@ async def main() -> None:
     register_admin_handlers(admin_router, repo, config, coordinator)
 
     if config.webhook_base_url:
-        await _run_webhook(bot, dp, config)
+        await _run_webhook(bot, dp, config, repo)
         return
 
     # Поллинг и вебхук для одного бота несовместимы: снимаем вебхук. Если бот

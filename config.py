@@ -34,6 +34,9 @@ class Config:
     # Парсить сайты по нажатию кнопки. На хостинге выключено: там нет
     # браузера, расписание обновляет GitHub Actions (scheduler/scrape.py).
     parse_on_demand: bool
+    # Ключ для адреса /cron/daily-poll (ежедневный опрос по внешнему
+    # расписанию). Пусто — адрес выключен.
+    cron_secret: str | None
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -58,4 +61,5 @@ class Config:
             webhook_secret=os.getenv("WEBHOOK_SECRET") or None,
             port=int(os.getenv("PORT", "8080")),
             parse_on_demand=os.getenv("PARSE_ON_DEMAND", "0" if webhook_base_url else "1") == "1",
+            cron_secret=os.getenv("CRON_SECRET") or None,
         )

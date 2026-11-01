@@ -8,7 +8,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from models.event import QuizEvent
-from storage.db import EventRow
+from storage.db import EventRow, PollLog
 from utils.clock import today_astana
 
 
@@ -141,3 +141,13 @@ class EventRepository:
             result = await session.execute(stmt)
             await session.commit()
             return result.rowcount or 0
+
+    async def poll_posted(self, day: date) -> bool:
+        async with self._session_factory() as session:
+            return await session.get(PollLog, day) is not None
+
+    async def mark_poll_posted(self, day: date) -> None:
+        async with self._session_factory() as session:
+            insert = pg_insert if session.bind.dialect.name == "postgresql" else sqlite_insert
+            await session.execute(insert(PollLog).values(day=day).on_conflict_do_nothing(index_elements=["day"]))
+            await session.commit()

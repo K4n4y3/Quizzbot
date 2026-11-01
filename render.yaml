@@ -23,3 +23,6 @@ services:
         sync: false
       - key: CHANNEL_ID
         sync: false
+      # Ключ для /cron/daily-poll — его же указывают в cron-job.org.
+      - key: CRON_SECRET
+        sync: false
