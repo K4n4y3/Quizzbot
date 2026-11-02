@@ -61,7 +61,9 @@ async def _block_noise(route: Route) -> None:
 
 @asynccontextmanager
 async def _page_in(browser: Browser, locale: str | None, cookies: list[dict] | None) -> AsyncIterator[Page]:
-    context = await browser.new_context(locale=locale)
+    # Часовой пояс Астаны: JS-сайты могут показывать время в поясе посетителя,
+    # а в GitHub Actions машина работает по UTC — время игр сдвинулось бы на 5 часов.
+    context = await browser.new_context(locale=locale, timezone_id="Asia/Almaty")
     try:
         if cookies:
             await context.add_cookies(cookies)
