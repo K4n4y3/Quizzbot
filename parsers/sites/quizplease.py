@@ -1,107 +1,83 @@
 """
-Парсер astana.quizplease.com.
+Парсер расписания "Квиз, плиз!" (astana.quizplease.com).
 
-Изначально брался с главной страницы (httpx + BeautifulSoup, там она
-статична) — но там только 3 "ближайшие игры". Полное расписание живёт на
-/schedule, а этот роут уже рендерится клиентским JS (Nuxt CSR): curl его
-не видит (проверено — 0 совпадений по классам карточек в исходном HTML),
-поэтому здесь Playwright.
+Берём данные напрямую из JSON API, которым пользуется сама страница
+/schedule. Раньше здесь был Playwright, но сайт стоит за защитой Cloudflare,
+и браузер из GitHub Actions карточек не получал: новые игры переставали
+попадать в базу. API отвечает на обычный запрос и не зависит от вёрстки.
 
-Структура карточки (DevTools, 2026-09-23), блок расписания на /schedule:
-  .schedule-card-desktop
-    .game-title-link[href]  — ссылка на страницу игры (/game/<uuid>), внутри h3.game-title
-    .place-title             — площадка
-    .place-address            — адрес
-    .game-date               — дата и время, ДВА формата:
-                                  "Сегодня, 20:00" (для игры сегодняшним днём)
-                                  "24 сентября, 20:00 (Четверг)" (для остальных)
-    .price-sum                — цена
-
-Для "Сегодня, ..." дату не парсим через utils.date_parser (там только
-день+месяц словом) — используем today_astana() напрямую (именно по
-времени Астаны, а не сервера — см. utils/clock.py). Для остальных
-формат "<день> <месяц словом>..." укладывается в extract_date/extract_time
-как есть (день недели в скобках игнорируется — regex ищет только день+месяц).
+Статусы — тот же набор, что запрашивает сайт. Дата приходит строкой
+"10.11.2026 20:00" в местном времени города.
 """
 
 from __future__ import annotations
 
 import logging
-from urllib.parse import urljoin
+from datetime import datetime
 
-from parsers.browser import goto, open_page, wait_for_items
+import httpx
 
 from models.event import QuizEvent
 from parsers.base import BaseParser
-from utils.clock import today_astana
-from utils.date_parser import DateParseError, extract_date, extract_time
 
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://astana.quizplease.com"
-SCHEDULE_URL = BASE_URL + "/schedule"
-CARD_SELECTOR = ".schedule-card-desktop"
+API_URL = "https://api.quizplease.com/api/games/schedule/29"  # 29 — id Астаны
+_STATUSES = ("0", "1", "2", "3", "5")
+_PER_PAGE = "100"
 
 
 class QuizPleaseParser(BaseParser):
     source_name = "Квиз, плиз!"
-    uses_browser = True
 
     async def parse(self) -> list[QuizEvent]:
-        cards_data: list[dict] = []
-
-        async with open_page() as page:
-            await goto(page, SCHEDULE_URL)
-            cards = page.locator(CARD_SELECTOR)
-            count = await wait_for_items(cards, timeout=15_000)
-
-            for i in range(count):
-                card = cards.nth(i)
-                cards_data.append(
-                    {
-                        "title": await card.locator(".game-title").text_content(),
-                        "raw_date": await card.locator(".game-date").text_content(),
-                        "venue": await card.locator(".place-title").text_content(),
-                        "address": await card.locator(".place-address").text_content(),
-                        "price": await card.locator(".price-sum").text_content(),
-                        "href": await card.locator(".game-title-link").get_attribute("href"),
-                    }
+        games: list[dict] = []
+        page = 1
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+            while True:
+                params = [("per_page", _PER_PAGE), ("page", str(page)), ("order", "date")]
+                params += [("statuses[]", s) for s in _STATUSES]
+                response = await client.get(
+                    API_URL,
+                    params=params,
+                    headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
                 )
+                response.raise_for_status()
+                data = response.json()["data"]
+                games.extend(data["data"])
+                if page >= data["pagination"]["total_pages"]:
+                    break
+                page += 1
 
-        events: list[QuizEvent] = []
-        for data in cards_data:
-            event = self._parse_card(data)
-            if event:
-                events.append(event)
+        return [event for event in map(self._parse_game, games) if event]
 
-        return events
-
-    def _parse_card(self, data: dict) -> QuizEvent | None:
-        raw_date = (data["raw_date"] or "").strip()
-
-        if raw_date.lower().startswith("сегодня"):
-            event_date = today_astana()
-        else:
-            try:
-                event_date = extract_date(raw_date)
-            except DateParseError:
-                logger.warning("QuizPlease: не удалось разобрать дату %r", raw_date)
-                return None
-
-        event_time = extract_time(raw_date)
-        title = (data["title"] or "").strip()
+    def _parse_game(self, game: dict) -> QuizEvent | None:
+        title = (game.get("title") or "").strip()
+        raw_date = game.get("date") or ""
+        try:
+            dt = datetime.strptime(raw_date, "%d.%m.%Y %H:%M")
+        except ValueError:
+            logger.warning("QuizPlease: не удалось разобрать дату %r", raw_date)
+            return None
         if not title:
             return None
+
+        if game.get("game_number"):
+            title = f"{title} #{game['game_number']}"
+
+        place = game.get("place") or {}
+        price = game.get("current_price") or game.get("price")
 
         return QuizEvent(
             source=self.source_name,
             title=title,
-            event_date=event_date,
-            event_time=event_time,
-            venue=(data["venue"] or "уточняется").strip(),
-            address=(data["address"] or "").strip() or None,
-            price=(data["price"] or "").strip() or None,
+            event_date=dt.date(),
+            event_time=dt.time(),
+            venue=(place.get("title") or "уточняется").strip(),
+            address=(place.get("address") or "").strip() or None,
+            price=f"{price} ₸" if price else None,
             city="Астана",
-            url=urljoin(BASE_URL, data["href"]) if data["href"] else SCHEDULE_URL,
+            url=f"{BASE_URL}/game/{game['id']}" if game.get("id") else f"{BASE_URL}/schedule",
             raw_text=f"{title} | {raw_date}",
         )

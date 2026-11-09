@@ -36,7 +36,7 @@ Telegram-бот, который собирает расписание квиз-�
 
 | Файл | Источник | Метод | Событий |
 |---|---|---|---|
-| `quizplease.py` | Квиз, плиз! | Playwright (`/schedule`, Nuxt CSR) | 10 |
+| `quizplease.py` | Квиз, плиз! | httpx (JSON API сайта) | 10 |
 | `einstein.py` | Einstein Party | httpx (статика, data-атрибуты) | 21 |
 | `shaker.py` | Shaker Quiz | httpx (Next.js `__NEXT_DATA__` JSON) | 4 |
 | `smuzi.py` | Смузи-квиз | Playwright (Tilda Store, `/games`) | 25 |
