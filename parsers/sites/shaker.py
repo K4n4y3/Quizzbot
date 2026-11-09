@@ -19,7 +19,9 @@ HTML без выполнения JS, поэтому httpx хватает, Playwr
 время, а не UTC). Поэтому просто берём час:минуту из строки как есть,
 без конвертации таймзоны.
 
-Игры со `status == "Finish"` — уже прошли, пропускаем их.
+Берём только игры со `status == "Publish"` и `visibility == "Visible"`.
+В данных страницы лежат и прошедшие ("Finish"), и отменённые организатором
+("Cancel") игры — сайт отдаёт их вместе с настоящими.
 """
 
 from __future__ import annotations
@@ -39,6 +41,7 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://astana.shakerquiz.ru/"
 GAMES_KEY = "GET/games/search"
 VENUES_KEY = "GET/games/venue/:venue/search"
+_KNOWN_STATUSES = {"Publish", "Finish", "Cancel"}
 
 
 class ShakerQuizParser(BaseParser):
@@ -85,7 +88,10 @@ class ShakerQuizParser(BaseParser):
         return None
 
     def _parse_game(self, game: dict, venue: dict | None) -> QuizEvent | None:
-        if game.get("status") == "Finish":
+        status, visibility = game.get("status"), game.get("visibility")
+        if status not in _KNOWN_STATUSES:
+            logger.warning("Shaker Quiz: неизвестный статус %r у игры %r", status, game.get("name"))
+        if status != "Publish" or visibility != "Visible":
             return None
 
         title = (game.get("name") or "").strip()
