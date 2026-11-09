@@ -83,34 +83,17 @@ async def _run_webhook(bot: Bot, dp: Dispatcher, config: Config, repo: EventRepo
     async def health(_: web.Request) -> web.Response:
         return web.Response(text="ok")
 
-    def _authorized(request: web.Request) -> bool:
-        key = request.headers.get("X-Cron-Key") or request.query.get("key")
-        return bool(config.cron_secret) and hmac.compare_digest(key or "", config.cron_secret)
-
     async def daily_poll(request: web.Request) -> web.Response:
-        if not _authorized(request):
+        key = request.headers.get("X-Cron-Key") or request.query.get("key")
+        if not config.cron_secret or not hmac.compare_digest(key or "", config.cron_secret):
             return web.Response(status=404)
         if not config.channel_id:
             return web.Response(status=500, text="CHANNEL_ID не задан")
         return web.Response(text=await post_daily_poll(bot, repo, config.channel_id))
 
-    async def refresh_quizplease(request: web.Request) -> web.Response:
-        # Квиз, плиз! отвечает 403 на запросы с серверов GitHub Actions,
-        # поэтому этот источник обновляется отсюда, по внешнему расписанию.
-        if not _authorized(request):
-            return web.Response(status=404)
-        parser = QuizPleaseParser()
-        events = await parser.fetch()
-        if not parser.last_ok:
-            return web.Response(status=502, text="сайт не ответил, подробности в логе")
-        inserted = await repo.save_many(events)
-        removed = await repo.delete_stale_for_source(parser.source_name, events) if events else 0
-        return web.Response(text=f"найдено {len(events)}, новых {inserted}, устаревших удалено {removed}")
-
     app = web.Application()
     app.router.add_get("/", health)
     app.router.add_route("*", "/cron/daily-poll", daily_poll)
-    app.router.add_route("*", "/cron/refresh-quizplease", refresh_quizplease)
     SimpleRequestHandler(dispatcher=dp, bot=bot, secret_token=secret).register(app, path=WEBHOOK_PATH)
     setup_application(app, dp, bot=bot)
 
