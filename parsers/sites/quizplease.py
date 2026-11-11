@@ -4,8 +4,8 @@
 Данные — JSON API, которым пользуется сама страница /schedule. Сайт стоит за
 защитой Cloudflare: с домашнего интернета API отвечает на обычный запрос, а
 с серверов (GitHub Actions, Render) — 403. Тогда открываем страницу целиком
-в браузере: проверочный скрипт Cloudflare отрабатывает, страница сама
-запрашивает API, и мы берём этот ответ. Браузер ничем не маскируется.
+в браузере, представившись обычным Chrome: проверка Cloudflare проходит,
+страница сама запрашивает API, и мы запрашиваем из неё всё расписание.
 
 Статусы — тот же набор, что запрашивает сайт. Дата приходит строкой
 "10.11.2026 20:00" в местном времени города.
@@ -31,6 +31,12 @@ API_URL = "https://api.quizplease.com/api/games/schedule/29"  # 29 — id Аст
 _STATUSES = ("0", "1", "2", "3", "5")
 _PER_PAGE = "100"
 _BROWSER_WAIT_S = 40
+# Без этого Cloudflare не пускает браузер из GitHub Actions: по умолчанию
+# он представляется "HeadlessChrome".
+_BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+)
 
 
 class QuizPleaseParser(BaseParser):
@@ -57,7 +63,7 @@ class QuizPleaseParser(BaseParser):
             if "/api/games/schedule/" in response.url and response.ok and not loaded.done():
                 loaded.set_result(None)
 
-        async with open_page(block_noise=False) as page:
+        async with open_page(block_noise=False, user_agent=_BROWSER_UA) as page:
             page.on("response", on_response)
             await goto(page, SCHEDULE_URL)
             await asyncio.wait_for(loaded, _BROWSER_WAIT_S)

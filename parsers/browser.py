@@ -61,11 +61,15 @@ async def _block_noise(route: Route) -> None:
 
 @asynccontextmanager
 async def _page_in(
-    browser: Browser, locale: str | None, cookies: list[dict] | None, block_noise: bool
+    browser: Browser,
+    locale: str | None,
+    cookies: list[dict] | None,
+    block_noise: bool,
+    user_agent: str | None,
 ) -> AsyncIterator[Page]:
     # Часовой пояс Астаны: JS-сайты могут показывать время в поясе посетителя,
     # а в GitHub Actions машина работает по UTC — время игр сдвинулось бы на 5 часов.
-    context = await browser.new_context(locale=locale, timezone_id="Asia/Almaty")
+    context = await browser.new_context(locale=locale, timezone_id="Asia/Almaty", user_agent=user_agent)
     try:
         if cookies:
             await context.add_cookies(cookies)
@@ -78,7 +82,11 @@ async def _page_in(
 
 @asynccontextmanager
 async def open_page(
-    *, locale: str | None = None, cookies: list[dict] | None = None, block_noise: bool = True
+    *,
+    locale: str | None = None,
+    cookies: list[dict] | None = None,
+    block_noise: bool = True,
+    user_agent: str | None = None,
 ) -> AsyncIterator[Page]:
     """
     Вкладка в общем браузере, если идёт обход через shared_browser(), иначе —
@@ -94,7 +102,7 @@ async def open_page(
         async with async_playwright() as p:
             browser = await _launch(p)
             try:
-                async with _page_in(browser, locale, cookies, block_noise) as page:
+                async with _page_in(browser, locale, cookies, block_noise, user_agent) as page:
                     yield page
             finally:
                 await browser.close()
@@ -102,7 +110,7 @@ async def open_page(
 
     if _browser is None or not _browser.is_connected():
         _browser = await _launch(_playwright)
-    async with _page_in(_browser, locale, cookies, block_noise) as page:
+    async with _page_in(_browser, locale, cookies, block_noise, user_agent) as page:
         yield page
 
 
