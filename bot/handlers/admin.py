@@ -51,7 +51,7 @@ _MONTHS_GENITIVE = [
     "июля", "августа", "сентября", "октября", "ноября", "декабря",
 ]
 
-_MAX_OPTIONS_PER_POLL = 9  # у Telegram лимит 10 вариантов, один занят пунктом "без меня"
+_MAX_OPTIONS_PER_POLL = 10  # лимит Telegram
 _OPT_OUT = "сегодня без меня ❌"
 _MAX_OPTION_LEN = 100
 _MAX_QUESTION_LEN = 300
@@ -111,8 +111,21 @@ def _poll_option(e: DisplayEvent) -> str:
     return text
 
 
-def _chunk(items: list, size: int) -> list[list]:
-    return [items[i : i + size] for i in range(0, len(items), size)]
+def poll_options(events: list[DisplayEvent]) -> list[list[str]]:
+    """
+    Варианты для опросов на день. Если всё не влезает в один опрос (лимит
+    Telegram — 10 вариантов), делим поровну, а "без меня" ставим один раз —
+    последним вариантом последнего опроса.
+    """
+    options = [_poll_option(e) for e in events] + [_OPT_OUT]
+    parts = -(-len(options) // _MAX_OPTIONS_PER_POLL)
+    size, extra = divmod(len(options), parts)
+    polls, start = [], 0
+    for i in range(parts):
+        end = start + size + (1 if i < extra else 0)
+        polls.append(options[start:end])
+        start = end
+    return polls
 
 
 def register_admin_handlers(
@@ -151,11 +164,10 @@ def register_admin_handlers(
             await message.answer("На сегодня квизов не нашлось — постить нечего.")
             return
 
-        chunks = _chunk(events, _MAX_OPTIONS_PER_POLL)
+        polls = poll_options(events)
 
-        for i, chunk in enumerate(chunks, start=1):
-            question = _poll_question(today, i, len(chunks))
-            options = [_poll_option(e) for e in chunk] + [_OPT_OUT]
+        for i, options in enumerate(polls, start=1):
+            question = _poll_question(today, i, len(polls))
             preview = "\n".join(f"☐ {o}" for o in options)
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
@@ -168,7 +180,7 @@ def register_admin_handlers(
                 ]
             )
             await message.answer(
-                f"<b>Опрос {i}/{len(chunks)}</b>\n<b>{question}</b>\n\n{preview}",
+                f"<b>Опрос {i}/{len(polls)}</b>\n<b>{question}</b>\n\n{preview}",
                 reply_markup=keyboard,
             )
 
@@ -192,16 +204,15 @@ def register_admin_handlers(
             return
 
         events = merge_mirrors(await repo.get_upcoming(from_date=target_date, to_date=target_date))
-        chunks = _chunk(events, _MAX_OPTIONS_PER_POLL)
-        if chunk_index >= len(chunks):
+        polls = poll_options(events) if events else []
+        if chunk_index >= len(polls):
             await callback.answer(
                 "Расписание на сегодня уже изменилось, эта кнопка устарела.", show_alert=True
             )
             return
 
-        chunk = chunks[chunk_index]
-        question = _poll_question(target_date, chunk_index + 1, len(chunks))
-        options = [_poll_option(e) for e in chunk] + [_OPT_OUT]
+        question = _poll_question(target_date, chunk_index + 1, len(polls))
+        options = polls[chunk_index]
 
         try:
             await bot.send_poll(
