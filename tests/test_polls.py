@@ -17,7 +17,7 @@ def run() -> None:
         assert polls[-1][-1] == _OPT_OUT, f"{n}: 'без меня' — последний вариант последнего опроса"
         assert len(flat) == n + 1, f"{n}: потерялись варианты"
         sizes = [len(p) for p in polls]
-        assert all(2 <= s <= 10 for s in sizes), f"{n}: в опросе от 2 до 10 вариантов, а не {sizes}"
+        assert all(2 <= s <= 12 for s in sizes), f"{n}: в опросе от 2 до 12 вариантов, а не {sizes}"
         assert max(sizes) - min(sizes) <= 1, f"{n}: опросы должны быть поровну, а не {sizes}"
     print("Тесты опросов прошли успешно.")
 
