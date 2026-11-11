@@ -60,33 +60,41 @@ async def _block_noise(route: Route) -> None:
 
 
 @asynccontextmanager
-async def _page_in(browser: Browser, locale: str | None, cookies: list[dict] | None) -> AsyncIterator[Page]:
+async def _page_in(
+    browser: Browser, locale: str | None, cookies: list[dict] | None, block_noise: bool
+) -> AsyncIterator[Page]:
     # Часовой пояс Астаны: JS-сайты могут показывать время в поясе посетителя,
     # а в GitHub Actions машина работает по UTC — время игр сдвинулось бы на 5 часов.
     context = await browser.new_context(locale=locale, timezone_id="Asia/Almaty")
     try:
         if cookies:
             await context.add_cookies(cookies)
-        await context.route("**/*", _block_noise)
+        if block_noise:
+            await context.route("**/*", _block_noise)
         yield await context.new_page()
     finally:
         await context.close()
 
 
 @asynccontextmanager
-async def open_page(*, locale: str | None = None, cookies: list[dict] | None = None) -> AsyncIterator[Page]:
+async def open_page(
+    *, locale: str | None = None, cookies: list[dict] | None = None, block_noise: bool = True
+) -> AsyncIterator[Page]:
     """
     Вкладка в общем браузере, если идёт обход через shared_browser(), иначе —
     в собственном (удобно для запуска одного парсера отдельно, при отладке).
     Если общий браузер умер посреди обхода (например, нехватка памяти),
     поднимаем новый, чтобы не потерять остальные источники.
+
+    block_noise=False — грузить страницу целиком, как обычный браузер: на
+    сайтах за защитой Cloudflare её проверочный скрипт должен отработать.
     """
     global _browser
     if _playwright is None:
         async with async_playwright() as p:
             browser = await _launch(p)
             try:
-                async with _page_in(browser, locale, cookies) as page:
+                async with _page_in(browser, locale, cookies, block_noise) as page:
                     yield page
             finally:
                 await browser.close()
@@ -94,7 +102,7 @@ async def open_page(*, locale: str | None = None, cookies: list[dict] | None = N
 
     if _browser is None or not _browser.is_connected():
         _browser = await _launch(_playwright)
-    async with _page_in(_browser, locale, cookies) as page:
+    async with _page_in(_browser, locale, cookies, block_noise) as page:
         yield page
 
 
