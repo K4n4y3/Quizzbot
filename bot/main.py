@@ -17,47 +17,12 @@ from bot.handlers.admin import router as admin_router
 from bot.handlers.schedule import register_schedule_handlers
 from bot.handlers.schedule import router as schedule_router
 from config import Config
-from parsers.base import BaseParser
-from parsers.sites.chill import ChillQuizParser
-from parsers.sites.detequiz import DetequizParser
-from parsers.sites.einstein import EinsteinPartyParser
-from parsers.sites.mohito import MohitoQuizParser
-from parsers.sites.mozgo import MozgoQuizParser
-from parsers.sites.peace import PeaceQuizParser
-from parsers.sites.playquiz import PlayQuizParser
-from parsers.sites.quizland import QuizlandParser
-from parsers.sites.quizplease import QuizPleaseParser
-from parsers.sites.shaker import ShakerQuizParser
-from parsers.sites.smuzi import SmuziQuizParser
-from parsers.sites.wow import WowQuizParser
 from scheduler.jobs import ParseCoordinator
 from storage.db import init_db, make_engine, make_session_factory
 from storage.repository import EventRepository
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
-
-
-def build_parsers() -> list[BaseParser]:
-    """
-    Список активных парсеров. Action, Teztap и Whiz Quiz сознательно не
-    парсятся: их игры админ добавляет вручную (на сайтах нет времени/места
-    или данных слишком мало).
-    """
-    return [
-        QuizPleaseParser(),
-        EinsteinPartyParser(),
-        ShakerQuizParser(),
-        SmuziQuizParser(),
-        WowQuizParser(),
-        PeaceQuizParser(),
-        QuizlandParser(),
-        MozgoQuizParser(),
-        PlayQuizParser(),
-        ChillQuizParser(),
-        DetequizParser(),
-        MohitoQuizParser(),
-    ]
 
 
 WEBHOOK_PATH = "/webhook"
@@ -116,6 +81,8 @@ async def main() -> None:
     # На хостинге браузера нет — расписание в базе обновляет GitHub Actions.
     coordinator = None
     if config.parse_on_demand:
+        from parsers.registry import build_parsers  # парсеры и Playwright нужны только тут
+
         coordinator = ParseCoordinator(
             build_parsers(),
             repo,

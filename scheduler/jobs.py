@@ -6,15 +6,12 @@ import time
 from datetime import datetime, timedelta
 
 from parsers.base import BaseParser
-from parsers.browser import shared_browser
 from storage.repository import EventRepository
 
 logger = logging.getLogger(__name__)
 
 
-async def fetch_all(
-    parsers: list[BaseParser], max_concurrent: int = 1, *, with_timings: bool = False
-):
+async def fetch_all(parsers: list[BaseParser], max_concurrent: int = 1) -> list[list]:
     """
     Собирает данные со всех источников. Браузерные парсеры работают во
     вкладках одного общего Chromium и ограничены семафором — на сервере с
@@ -23,24 +20,20 @@ async def fetch_all(
     почти не тратят память и идут параллельно без ограничения.
     Падение одного парсера не мешает остальным — см. BaseParser.fetch().
     """
+    # Импорт здесь, а не наверху: модуль импортирует и бот на хостинге,
+    # которому Playwright не нужен.
+    from parsers.browser import shared_browser
+
     semaphore = asyncio.Semaphore(max_concurrent)
-    timings: dict[str, float] = {}
 
     async def _run(parser: BaseParser) -> list:
         if parser.uses_browser:
             async with semaphore:
-                return await _timed(parser)
-        return await _timed(parser)
-
-    async def _timed(parser: BaseParser) -> list:
-        started = time.perf_counter()
-        events = await parser.fetch()
-        timings[parser.source_name] = time.perf_counter() - started
-        return events
+                return await parser.fetch()
+        return await parser.fetch()
 
     async with shared_browser():
-        results = await asyncio.gather(*(_run(p) for p in parsers))
-    return (results, timings) if with_timings else results
+        return await asyncio.gather(*(_run(p) for p in parsers))
 
 
 async def run_all_parsers(
@@ -91,7 +84,7 @@ class ParseCoordinator:
     жечь CPU/сеть впустую, когда ботом никто не пользуется).
 
     Два нюанса, которые пришлось учесть:
-    - "На каждый чих — новый парсинг всех 15 сайтов" тоже не годится: если
+    - "На каждый чих — новый парсинг всех сайтов" тоже не годится: если
       несколько человек одновременно нажмут /today, не должно получиться
       несколько параллельных прогонов всех источников разом. Поэтому
       результат считается свежим ещё `stale_after` минут после последнего

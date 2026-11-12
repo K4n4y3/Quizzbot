@@ -20,6 +20,21 @@ class DisplayEvent:
     venue: str
     address: str | None = None
 
+    @property
+    def time_text(self) -> str:
+        return self.event_time.strftime("%H:%M") if self.event_time else "время уточняется"
+
+    @property
+    def venue_text(self) -> str:
+        return "место уточняется" if self.venue == "уточняется" else self.venue
+
+    @property
+    def place_text(self) -> str:
+        """"Бар, адрес" — адрес не дублируем, если он уже входит в название места."""
+        if self.address and self.address.lower() not in self.venue_text.lower():
+            return f"{self.venue_text}, {self.address}"
+        return self.venue_text
+
 
 def _venue_key(venue: str) -> str:
     return " ".join(venue.lower().split())

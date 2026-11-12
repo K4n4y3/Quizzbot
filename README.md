@@ -142,7 +142,7 @@ quiz, Blackbox, Svoy, Beast case, Quizmania, Мозгобаттл) — авто�
 Если появится новый сайт-источник — `_static_template.py` (статика,
 образец — `playquiz.py`/`einstein.py`) или скопировать любой из
 Playwright-парсеров (`chill.py`, `wow.py` — хорошие примеры) под
-JS-сайты, дальше добавить в `build_parsers()` в `bot/main.py`.
+JS-сайты, дальше добавить в `build_parsers()` в `parsers/registry.py`.
 
 ## Хостинг (бесплатный)
 

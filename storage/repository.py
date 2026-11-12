@@ -12,6 +12,12 @@ from storage.db import EventRow, PollLog
 from utils.clock import today_astana
 
 
+def _insert(session: AsyncSession, table):
+    """INSERT с поддержкой ON CONFLICT для того диалекта, с которым работает сессия."""
+    dialect_insert = pg_insert if session.bind.dialect.name == "postgresql" else sqlite_insert
+    return dialect_insert(table)
+
+
 class EventRepository:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
@@ -47,8 +53,7 @@ class EventRepository:
         ]
 
         async with self._session_factory() as session:
-            insert = pg_insert if session.bind.dialect.name == "postgresql" else sqlite_insert
-            stmt = insert(EventRow).values(rows)
+            stmt = _insert(session, EventRow).values(rows)
             stmt = stmt.on_conflict_do_nothing(index_elements=["dedupe_hash"])
             result = await session.execute(stmt)
             await session.commit()
@@ -148,6 +153,6 @@ class EventRepository:
 
     async def mark_poll_posted(self, day: date) -> None:
         async with self._session_factory() as session:
-            insert = pg_insert if session.bind.dialect.name == "postgresql" else sqlite_insert
-            await session.execute(insert(PollLog).values(day=day).on_conflict_do_nothing(index_elements=["day"]))
+            stmt = _insert(session, PollLog).values(day=day).on_conflict_do_nothing(index_elements=["day"])
+            await session.execute(stmt)
             await session.commit()

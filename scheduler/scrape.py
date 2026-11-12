@@ -13,8 +13,8 @@ import logging
 import os
 import sys
 
-from bot.main import build_parsers
 from config import database_from_env
+from parsers.registry import build_parsers
 from scheduler.jobs import run_all_parsers
 from storage.db import init_db, make_engine, make_session_factory
 from storage.repository import EventRepository

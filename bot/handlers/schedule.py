@@ -12,34 +12,23 @@ from bot.keyboards import BTN_THEMES, BTN_TODAY, BTN_WEEK, main_menu_keyboard
 from config import Config
 from scheduler.jobs import ParseCoordinator
 from storage.repository import EventRepository
-from utils.clock import today_astana
+from utils.clock import MONTHS_GENITIVE_RU, WEEKDAYS_RU, today_astana
 from utils.merge import DisplayEvent, merge_mirrors
 from utils.themes import ALL_THEMES, themes_of
 
 router = Router()
-
-_WEEKDAYS = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
-_MONTHS_GENITIVE = [
-    "января", "февраля", "марта", "апреля", "мая", "июня",
-    "июля", "августа", "сентября", "октября", "ноября", "декабря",
-]
 
 _THEME_DAYS = 14
 _MAX_MESSAGE_LEN = 4000  # у Telegram лимит 4096, оставляем запас
 
 
 def _format_day_header(d: date) -> str:
-    return f"🗓 <b>{d.day} {_MONTHS_GENITIVE[d.month - 1]}, {_WEEKDAYS[d.weekday()].upper()}</b>"
+    return f"🗓 <b>{d.day} {MONTHS_GENITIVE_RU[d.month - 1]}, {WEEKDAYS_RU[d.weekday()].upper()}</b>"
 
 
 def _format_event(e: DisplayEvent) -> str:
     """<b>Организатор время</b> — Тема | <i>бар, адрес</i>"""
-    time_str = e.event_time.strftime("%H:%M") if e.event_time else "время уточняется"
-    venue = "место уточняется" if e.venue == "уточняется" else e.venue
-    place = venue
-    if e.address and e.address.lower() not in venue.lower():
-        place = f"{venue}, {e.address}"
-    return f"<b>{escape(e.source)} {time_str}</b> — {escape(e.title)} | <i>{escape(place)}</i>"
+    return f"<b>{escape(e.source)} {e.time_text}</b> — {escape(e.title)} | <i>{escape(e.place_text)}</i>"
 
 
 def _format_events_by_day(events: list[DisplayEvent]) -> str:
@@ -66,11 +55,11 @@ async def _answer_chunked(message: Message, text: str) -> None:
         await message.answer(chunk)
 
 
-async def _ensure_fresh_with_notice(message: Message, coordinator: ParseCoordinator | None) -> None:
+async def ensure_fresh_with_notice(message: Message, coordinator: ParseCoordinator | None) -> None:
     """
     Парсинг запускается лениво, по факту обращения к боту (см.
     ParseCoordinator), а не по таймеру — так что первый после "затишья"
-    вызов /today или /week может занять до ~20-30 секунд (15 сайтов,
+    вызов /today или /week может занять до минуты (обход всех сайтов,
     часть — через headless-браузер). Предупреждаем об этом, только если
     парсинг реально запустится (данные устарели), а не при каждом вызове.
     """
@@ -106,7 +95,7 @@ def register_schedule_handlers(
 
     @router_.message(Command("today"))
     async def cmd_today(message: Message) -> None:
-        await _ensure_fresh_with_notice(message, coordinator)
+        await ensure_fresh_with_notice(message, coordinator)
 
         today = today_astana()
         events = merge_mirrors(await repo.get_upcoming(from_date=today, to_date=today))
@@ -118,7 +107,7 @@ def register_schedule_handlers(
 
     @router_.message(Command("week"))
     async def cmd_week(message: Message) -> None:
-        await _ensure_fresh_with_notice(message, coordinator)
+        await ensure_fresh_with_notice(message, coordinator)
 
         today = today_astana()
         events = merge_mirrors(
@@ -159,7 +148,7 @@ def register_schedule_handlers(
         if message is None:
             return
 
-        await _ensure_fresh_with_notice(message, coordinator)
+        await ensure_fresh_with_notice(message, coordinator)
 
         today = today_astana()
         events = merge_mirrors(

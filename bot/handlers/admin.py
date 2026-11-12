@@ -16,13 +16,21 @@ from __future__ import annotations
 
 import logging
 from datetime import date, time
+from html import escape
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InputPollOption,
+    Message,
+)
 
+from bot.handlers.schedule import ensure_fresh_with_notice
 from bot.keyboards import (
     BTN_ADD_EVENT,
     BTN_BULK_ADD,
@@ -36,19 +44,13 @@ from config import Config
 from models.event import QuizEvent
 from scheduler.jobs import ParseCoordinator
 from storage.repository import EventRepository
-from utils.clock import today_astana
-from utils.merge import DisplayEvent, merge_mirrors
+from utils.clock import MONTHS_GENITIVE_RU, WEEKDAYS_RU, today_astana
 from utils.date_parser import DateParseError, extract_date, extract_time
+from utils.merge import DisplayEvent, merge_mirrors
 
 logger = logging.getLogger(__name__)
 
 router = Router()
-
-_WEEKDAYS = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
-_MONTHS_GENITIVE = [
-    "января", "февраля", "марта", "апреля", "мая", "июня",
-    "июля", "августа", "сентября", "октября", "ноября", "декабря",
-]
 
 _MAX_OPTIONS_PER_POLL = 12  # лимит Telegram (Bot API 10.4: 1–12 вариантов)
 _OPT_OUT = "сегодня без меня ❌"
@@ -84,7 +86,7 @@ class BulkAddStates(StatesGroup):
 
 
 def _poll_question(d: date, part: int, total_parts: int) -> str:
-    header = f"🗓 {d.day} {_MONTHS_GENITIVE[d.month - 1]}, {_WEEKDAYS[d.weekday()]} - сегодня я иду..."
+    header = f"🗓 {d.day} {MONTHS_GENITIVE_RU[d.month - 1]}, {WEEKDAYS_RU[d.weekday()]} - сегодня я иду..."
     if total_parts > 1:
         header += f" ({part}/{total_parts})"
     return header[:_MAX_QUESTION_LEN]
@@ -97,17 +99,25 @@ def _poll_option(e: DisplayEvent) -> str:
     влезает в лимит 100 символов, сначала жертвуем адресом, потом
     обрезаем тему.
     """
-    time_str = e.event_time.strftime("%H:%M") if e.event_time else "время уточняется"
-    venue = "место уточняется" if e.venue == "уточняется" else e.venue
-    place = venue
-    if e.address and e.address.lower() not in venue.lower():
-        place = f"{venue}, {e.address}"
-    text = f"{e.source} {time_str} ({place}) — {e.title}"
+    text = f"{e.source} {e.time_text} ({e.place_text}) — {e.title}"
     if len(text) > _MAX_OPTION_LEN:
-        text = f"{e.source} {time_str} ({venue}) — {e.title}"
+        text = f"{e.source} {e.time_text} ({e.venue_text}) — {e.title}"
     if len(text) > _MAX_OPTION_LEN:
         text = text[: _MAX_OPTION_LEN - 1] + "…"
     return text
+
+
+async def send_quiz_poll(bot: Bot, chat_id: str, question: str, options: list[str]) -> None:
+    # У бота по умолчанию HTML-разметка, и aiogram применяет её и к опросу:
+    # символ "<" в названии квиза сломал бы отправку. Опрос — простой текст.
+    await bot.send_poll(
+        chat_id=chat_id,
+        question=question,
+        question_parse_mode=None,
+        options=[InputPollOption(text=o, text_parse_mode=None) for o in options],
+        is_anonymous=True,
+        allows_multiple_answers=True,
+    )
 
 
 def poll_options(events: list[DisplayEvent]) -> list[list[str]]:
@@ -149,13 +159,7 @@ def register_admin_handlers(
             await message.answer("Команда не настроена: задайте CHANNEL_ID в .env.")
             return
 
-        if coordinator is not None and coordinator.is_stale():
-            notice = await message.answer("⏳ Собираю свежее расписание с сайтов, секунду...")
-            await coordinator.ensure_fresh()
-            try:
-                await notice.delete()
-            except Exception:
-                pass
+        await ensure_fresh_with_notice(message, coordinator)
 
         today = today_astana()
         events = merge_mirrors(await repo.get_upcoming(from_date=today, to_date=today))
@@ -167,7 +171,7 @@ def register_admin_handlers(
 
         for i, options in enumerate(polls, start=1):
             question = _poll_question(today, i, len(polls))
-            preview = "\n".join(f"☐ {o}" for o in options)
+            preview = "\n".join(f"☐ {escape(o)}" for o in options)
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [
@@ -179,7 +183,7 @@ def register_admin_handlers(
                 ]
             )
             await message.answer(
-                f"<b>Опрос {i}/{len(polls)}</b>\n<b>{question}</b>\n\n{preview}",
+                f"<b>Опрос {i}/{len(polls)}</b>\n<b>{escape(question)}</b>\n\n{preview}",
                 reply_markup=keyboard,
             )
 
@@ -214,13 +218,7 @@ def register_admin_handlers(
         options = polls[chunk_index]
 
         try:
-            await bot.send_poll(
-                chat_id=config.channel_id,
-                question=question,
-                options=options,
-                is_anonymous=True,
-                allows_multiple_answers=True,
-            )
+            await send_quiz_poll(bot, config.channel_id, question, options)
         except Exception:
             logger.exception("Не удалось опубликовать опрос в канал %s", config.channel_id)
             await callback.answer(
@@ -322,11 +320,11 @@ def register_admin_handlers(
         time_str = data["event_time"] or "время уточняется"
         summary = (
             "Проверьте перед сохранением:\n\n"
-            f"Источник: {data['source']}\n"
+            f"Источник: {escape(data['source'])}\n"
             f"Дата: {event_date.strftime('%d.%m.%Y')}\n"
             f"Время: {time_str}\n"
-            f"Название: {data['title']}\n"
-            f"Место: {venue}"
+            f"Название: {escape(data['title'])}\n"
+            f"Место: {escape(venue)}"
         )
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
@@ -417,7 +415,7 @@ def register_admin_handlers(
             try:
                 event_date = extract_date(when)
             except DateParseError:
-                errors.append(f'{i}: не понял дату в "{when}"')
+                errors.append(f'{i}: не понял дату в "{escape(when)}"')
                 continue
             events.append(
                 QuizEvent(
@@ -481,8 +479,8 @@ def register_admin_handlers(
         for e in events:
             time_str = e.event_time.strftime("%H:%M") if e.event_time else "время уточняется"
             text = (
-                f"{e.event_date.strftime('%d.%m')} {time_str} — {e.source}: "
-                f"{e.title} | {e.venue}"
+                f"{e.event_date.strftime('%d.%m')} {time_str} — {escape(e.source)}: "
+                f"{escape(e.title)} | {escape(e.venue)}"
             )
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[[InlineKeyboardButton(text="🗑 Удалить", callback_data=f"delmanual:{e.id}")]]

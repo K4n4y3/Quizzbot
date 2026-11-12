@@ -12,7 +12,7 @@ import logging
 
 from aiogram import Bot
 
-from bot.handlers.admin import _poll_question, poll_options
+from bot.handlers.admin import _poll_question, poll_options, send_quiz_poll
 from storage.repository import EventRepository
 from utils.clock import today_astana
 from utils.merge import merge_mirrors
@@ -32,13 +32,7 @@ async def post_daily_poll(bot: Bot, repo: EventRepository, channel_id: str, *, f
 
     polls = poll_options(events)
     for i, options in enumerate(polls, start=1):
-        await bot.send_poll(
-            chat_id=channel_id,
-            question=_poll_question(today, i, len(polls)),
-            options=options,
-            is_anonymous=True,
-            allows_multiple_answers=True,
-        )
+        await send_quiz_poll(bot, channel_id, _poll_question(today, i, len(polls)), options)
     await repo.mark_poll_posted(today)
     result = f"опубликовано опросов: {len(polls)} (квизов: {len(events)}) в {channel_id}"
     logger.info("Ежедневный опрос: %s", result)
