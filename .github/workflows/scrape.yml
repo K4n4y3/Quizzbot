@@ -5,7 +5,12 @@ on:
     # Каждые 3 часа (время UTC; в Астане +5). Минуты не ровные — в начале
     # часа у GitHub очередь, и запуск может сильно опоздать.
     - cron: "17 */3 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      notify_chat_id:
+        description: "Telegram ID, куда прислать итог (заполняет бот при нажатии «Обновить расписание»)"
+        required: false
+        default: ""
 
 concurrency:
   group: scrape
@@ -36,6 +41,9 @@ jobs:
       - name: Обход сайтов
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ALERT_CHAT_IDS: ${{ secrets.ALERT_CHAT_IDS }}
+          NOTIFY_CHAT_ID: ${{ inputs.notify_chat_id }}
         run: python -m scheduler.scrape
 
       # GitHub отключает расписание в публичном репозитории, если в нём 60

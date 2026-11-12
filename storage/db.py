@@ -43,6 +43,16 @@ class PollLog(Base):
     day: Mapped[date] = mapped_column(Date, primary_key=True)
 
 
+class SourceHealth(Base):
+    """Сколько обновлений подряд источник не отдаёт игры и было ли оповещение."""
+
+    __tablename__ = "source_health"
+
+    source: Mapped[str] = mapped_column(Text, primary_key=True)
+    fail_streak: Mapped[int] = mapped_column(default=0)
+    alerted: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+
+
 def _postgres_url(url: str) -> tuple[str, dict]:
     """
     Строка подключения Neon/Supabase ("postgresql://...?sslmode=require")

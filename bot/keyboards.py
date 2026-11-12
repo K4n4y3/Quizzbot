@@ -9,6 +9,7 @@ BTN_ADD_EVENT = "➕ Добавить квиз"
 BTN_BULK_ADD = "📥 Массово"
 BTN_MY_EVENTS = "📋 Мои квизы"
 BTN_POST_TODAY = "📤 Опубликовать сегодня"
+BTN_REFRESH = "🔄 Обновить расписание"
 BTN_CANCEL = "❌ Отмена"
 
 
@@ -25,6 +26,7 @@ def main_menu_keyboard(is_admin: bool) -> ReplyKeyboardMarkup:
     if is_admin:
         rows.append([KeyboardButton(text=BTN_ADD_EVENT), KeyboardButton(text=BTN_BULK_ADD)])
         rows.append([KeyboardButton(text=BTN_MY_EVENTS), KeyboardButton(text=BTN_POST_TODAY)])
+        rows.append([KeyboardButton(text=BTN_REFRESH)])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 

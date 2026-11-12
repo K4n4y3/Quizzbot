@@ -37,6 +37,10 @@ class Config:
     # Ключ для адреса /cron/daily-poll (ежедневный опрос по внешнему
     # расписанию). Пусто — адрес выключен.
     cron_secret: str | None
+    # Токен GitHub с правом запускать workflow — для кнопки «Обновить
+    # расписание» на хостинге. Репозиторий — в формате "владелец/имя".
+    github_token: str | None
+    github_repo: str
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -62,4 +66,6 @@ class Config:
             port=int(os.getenv("PORT", "8080")),
             parse_on_demand=os.getenv("PARSE_ON_DEMAND", "0" if webhook_base_url else "1") == "1",
             cron_secret=os.getenv("CRON_SECRET") or None,
+            github_token=os.getenv("GH_DISPATCH_TOKEN") or None,
+            github_repo=os.getenv("GITHUB_REPO", "K4n4y3/Quizzbot"),
         )

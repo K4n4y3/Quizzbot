@@ -3,12 +3,21 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from parsers.base import BaseParser
 from storage.repository import EventRepository
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ScrapeResult:
+    results: list[list]  # события по каждому парсеру, в порядке списка парсеров
+    found: int
+    inserted: int
+    seconds: float
 
 
 async def fetch_all(parsers: list[BaseParser], max_concurrent: int = 1) -> list[list]:
@@ -40,7 +49,7 @@ async def run_all_parsers(
     parsers: list[BaseParser],
     repo: EventRepository,
     max_concurrent: int = 1,
-) -> None:
+) -> ScrapeResult:
     """Обходит все источники и одним пакетом сохраняет собранное в БД."""
     logger.info(
         "Запускаю парсинг %d источников (браузерных — до %d одновременно)...",
@@ -64,15 +73,17 @@ async def run_all_parsers(
 
     removed = await repo.delete_past()
 
+    result = ScrapeResult(results, len(all_events), inserted, time.perf_counter() - started)
     logger.info(
         "Парсинг завершён за %.0f с: всего найдено %d событий, новых сохранено %d, "
         "устаревших у источников удалено %d, прошедших удалено %d",
-        time.perf_counter() - started,
-        len(all_events),
+        result.seconds,
+        result.found,
         inserted,
         stale,
         removed,
     )
+    return result
 
 
 class ParseCoordinator:
@@ -115,14 +126,16 @@ class ParseCoordinator:
         """Быстрая проверка без блокировки — удобно решить, показывать ли "подождите"."""
         return self._last_run is None or (datetime.now() - self._last_run) >= self._stale_after
 
-    async def ensure_fresh(self) -> bool:
+    async def ensure_fresh(self, *, force: bool = False) -> ScrapeResult | None:
         """
         Запускает парсинг всех источников, если данные устарели (или их
-        никогда не было). Возвращает True, если парсинг реально произошёл.
+        никогда не было), либо принудительно. Возвращает итог обхода или
+        None, если данные свежие и обход не понадобился.
         """
         async with self._lock:
-            if self._last_run is not None and datetime.now() - self._last_run < self._stale_after:
-                return False
-            await run_all_parsers(self._parsers, self._repo, self._max_concurrent)
+            fresh = self._last_run is not None and datetime.now() - self._last_run < self._stale_after
+            if fresh and not force:
+                return None
+            result = await run_all_parsers(self._parsers, self._repo, self._max_concurrent)
             self._last_run = datetime.now()
-            return True
+            return result

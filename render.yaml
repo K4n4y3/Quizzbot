@@ -26,3 +26,7 @@ services:
       # Ключ для /cron/daily-poll — его же указывают в cron-job.org.
       - key: CRON_SECRET
         sync: false
+      # Токен GitHub (fine-grained, только этот репозиторий, Actions: Read and
+      # write) — для кнопки «Обновить расписание».
+      - key: GH_DISPATCH_TOKEN
+        sync: false

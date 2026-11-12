@@ -31,16 +31,25 @@ class BaseParser(ABC):
     #: Такие парсеры ограничены по параллельности, httpx-парсеры — нет.
     uses_browser: bool = False
 
+    #: Пустое расписание у источника — норма (например, у Quizland бывает
+    #: один анонс или ни одного). Для остальных 0 игр без ошибки — повод
+    #: для оповещения: так выглядит сменившаяся вёрстка (см. scheduler/health.py).
+    may_be_empty: bool = False
+
+    #: Краткое описание ошибки последнего fetch() — для оповещений.
+    last_error: str | None = None
+
     async def fetch(self) -> list[QuizEvent]:
         """
         Публичная точка входа. Оборачивает `parse()` так, чтобы падение
         ОДНОГО источника не роняло весь цикл парсинга остальных источников.
         """
-        self.last_ok = False
+        self.last_ok, self.last_error = False, None
         try:
             events = await self.parse()
-        except Exception:
+        except Exception as e:
             logger.exception("Парсер %s упал с ошибкой", self.source_name)
+            self.last_error = f"{type(e).__name__}: {e}"[:300]
             return []
         self.last_ok = True
 

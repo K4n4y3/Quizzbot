@@ -18,6 +18,8 @@ import logging
 from datetime import date, time
 from html import escape
 
+import httpx
+
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -37,6 +39,7 @@ from bot.keyboards import (
     BTN_CANCEL,
     BTN_MY_EVENTS,
     BTN_POST_TODAY,
+    BTN_REFRESH,
     cancel_keyboard,
     main_menu_keyboard,
 )
@@ -137,6 +140,25 @@ def poll_options(events: list[DisplayEvent]) -> list[list[str]]:
     return polls
 
 
+async def dispatch_scrape(config: Config, notify_chat_id: int) -> str | None:
+    """Запускает workflow обновления расписания в GitHub. None — успех, иначе текст ошибки."""
+    url = f"https://api.github.com/repos/{config.github_repo}/actions/workflows/scrape.yml/dispatches"
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {config.github_token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            json={"ref": "main", "inputs": {"notify_chat_id": str(notify_chat_id)}},
+        )
+    if response.status_code == 204:
+        return None
+    logger.error("GitHub не запустил обновление: %s %s", response.status_code, response.text)
+    return f"GitHub ответил {response.status_code}"
+
+
 def register_admin_handlers(
     router_: Router, repo: EventRepository, config: Config, coordinator: ParseCoordinator | None
 ) -> None:
@@ -188,6 +210,29 @@ def register_admin_handlers(
             )
 
     router_.message(F.text == BTN_POST_TODAY)(cmd_post_today)
+
+    @router_.message(Command("refresh"))
+    async def cmd_refresh(message: Message) -> None:
+        if not _is_admin(message):
+            return
+        if config.github_token:
+            error = await dispatch_scrape(config, message.chat.id)
+            if error:
+                await message.answer(f"Не удалось запустить обновление: {escape(error)}")
+            else:
+                await message.answer("🔄 Запустил обновление расписания. Займёт 1–2 минуты, итог пришлю сюда.")
+            return
+        if coordinator is not None:  # локальный запуск: бот парсит сам
+            await message.answer("⏳ Обновляю расписание, это займёт около минуты...")
+            result = await coordinator.ensure_fresh(force=True)
+            await message.answer(
+                f"🔄 Расписание обновлено за {result.seconds:.0f} с: найдено игр {result.found}, "
+                f"новых {result.inserted}."
+            )
+            return
+        await message.answer("Кнопка не настроена: задайте GH_DISPATCH_TOKEN в настройках хостинга.")
+
+    router_.message(F.text == BTN_REFRESH)(cmd_refresh)
 
     @router_.callback_query(F.data.startswith("postpoll:"))
     async def cb_post_poll(callback: CallbackQuery, bot: Bot) -> None:

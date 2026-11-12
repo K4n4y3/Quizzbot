@@ -34,6 +34,7 @@ _ANNOUNCEMENT_RE = re.compile(r"Ближайшая игра\s*-\s*(?P<rest>[^\n]
 
 class QuizlandParser(BaseParser):
     source_name = "Quizland"
+    may_be_empty = True  # на сайте один анонс ближайшей игры, иногда ни одного
 
     async def parse(self) -> list[QuizEvent]:
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:

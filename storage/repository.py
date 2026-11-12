@@ -8,7 +8,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from models.event import QuizEvent
-from storage.db import EventRow, PollLog
+from storage.db import EventRow, PollLog, SourceHealth
 from utils.clock import today_astana
 
 
@@ -155,4 +155,15 @@ class EventRepository:
         async with self._session_factory() as session:
             stmt = _insert(session, PollLog).values(day=day).on_conflict_do_nothing(index_elements=["day"])
             await session.execute(stmt)
+            await session.commit()
+
+    async def get_health(self) -> dict[str, SourceHealth]:
+        async with self._session_factory() as session:
+            rows = (await session.execute(select(SourceHealth))).scalars().all()
+            return {row.source: row for row in rows}
+
+    async def save_health(self, rows: list[SourceHealth]) -> None:
+        async with self._session_factory() as session:
+            for row in rows:
+                await session.merge(row)
             await session.commit()
