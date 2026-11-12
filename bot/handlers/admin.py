@@ -35,11 +35,14 @@ from aiogram.types import (
 from bot.handlers.schedule import ensure_fresh_with_notice
 from bot.keyboards import (
     BTN_ADD_EVENT,
+    BTN_ADMIN,
+    BTN_BACK,
     BTN_BULK_ADD,
     BTN_CANCEL,
     BTN_MY_EVENTS,
     BTN_POST_TODAY,
     BTN_REFRESH,
+    admin_menu_keyboard,
     cancel_keyboard,
     main_menu_keyboard,
 )
@@ -166,6 +169,16 @@ def register_admin_handlers(
 
     def _is_admin(message: Message) -> bool:
         return message.from_user is not None and message.from_user.id in config.admin_user_ids
+
+    @router_.message(F.text == BTN_ADMIN)
+    async def open_admin_menu(message: Message) -> None:
+        if not _is_admin(message):
+            return
+        await message.answer("Админ-меню:", reply_markup=admin_menu_keyboard())
+
+    @router_.message(F.text == BTN_BACK)
+    async def back_to_main_menu(message: Message) -> None:
+        await message.answer("Главное меню:", reply_markup=main_menu_keyboard(_is_admin(message)))
 
     @router_.message(Command("post_today"))
     async def cmd_post_today(message: Message) -> None:
@@ -298,7 +311,7 @@ def register_admin_handlers(
     @router_.message(F.text == BTN_CANCEL, StateFilter(AddEventStates))
     async def add_event_cancel(message: Message, state: FSMContext) -> None:
         await state.clear()
-        await message.answer("Добавление отменено.", reply_markup=main_menu_keyboard(_is_admin(message)))
+        await message.answer("Отменено.", reply_markup=admin_menu_keyboard())
 
     router_.message(Command("cancel"), StateFilter(AddEventStates))(add_event_cancel)
     router_.message(F.text == BTN_CANCEL, StateFilter(BulkAddStates))(add_event_cancel)
@@ -408,7 +421,7 @@ def register_admin_handlers(
         await callback.answer("Добавлено ✅")
         if callback.message is not None:
             await callback.message.answer(
-                "Квиз добавлен в расписание.", reply_markup=main_menu_keyboard(True)
+                "Квиз добавлен в расписание.", reply_markup=admin_menu_keyboard()
             )
 
     @router_.callback_query(F.data == "addevent:cancel")
@@ -418,7 +431,7 @@ def register_admin_handlers(
             await callback.message.edit_reply_markup(reply_markup=None)
         await callback.answer("Отменено")
         if callback.message is not None:
-            await callback.message.answer("Добавление отменено.", reply_markup=main_menu_keyboard(True))
+            await callback.message.answer("Добавление отменено.", reply_markup=admin_menu_keyboard())
 
     # --- Массовое добавление списком (текст или .txt файл) ---
 
@@ -486,7 +499,7 @@ def register_admin_handlers(
             if len(errors) > 15:
                 summary += f"\n...и ещё {len(errors) - 15}"
 
-        await message.answer(summary, reply_markup=main_menu_keyboard(True))
+        await message.answer(summary, reply_markup=admin_menu_keyboard())
 
     @router_.message(BulkAddStates.waiting, F.document)
     async def bulk_add_file(message: Message, state: FSMContext, bot: Bot) -> None:
